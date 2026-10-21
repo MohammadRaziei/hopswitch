@@ -20,10 +20,11 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] `DnsConfig` (1–4 servers, ordered, no duplicates/unspecified; serialises as array)
 - [x] `Profile` (id, name ≤ 64 chars counted by character, proxy and/or DNS)
 - [x] Deserialisation re-validates (no invalid state can be loaded from disk)
+- [x] `managed_block`: safe, reversible edits of foreign files (marked block at top, byte-exact restore, refuses damaged markers) — ADR-0003
 
 ### ⬜ Step 2 — System abstraction & profile service
 - [ ] `SystemNetwork` trait: read / apply / restore proxy and DNS
-- [ ] `SystemSnapshot` captured before the first apply
+- [ ] `SystemSnapshot` captured before the first apply (includes a full copy of any file we will edit)
 - [ ] `ProfileService`: activate, deactivate (restore snapshot), switch A→B without losing the original snapshot
 - [ ] Partial-failure handling (proxy applied, DNS failed → rollback)
 - [ ] In-memory fake adapter used by the tests
@@ -36,6 +37,11 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 ### ⬜ Step 4 — Windows adapter (registry proxy + `InternetSetOption`, DNS via PowerShell/netsh)
 ### ⬜ Step 5 — macOS adapter (`networksetup`, per-service handling)
 ### ⬜ Step 6 — Linux adapter (GNOME `gsettings`, KDE, `resolvectl` / `nmcli`)
+- [ ] Detect who owns DNS: `systemd-resolved` / NetworkManager → use their CLI; plain static file → managed block
+- [ ] Never replace a symlinked `/etc/resolv.conf`; never run with a damaged-marker file
+- [ ] Backup before first write; atomic write preserving mode/owner (fallback to in-place write when rename is impossible, e.g. container bind mounts)
+- [ ] Warn/truncate when more than 3 DNS servers (glibc limit)
+- [ ] Integration tests against a temp dir that mimics real `resolv.conf` shapes
 ### ⬜ Step 7 — Tauri shell
 - [ ] Commands (`list_profiles`, `save_profile`, `delete_profile`, `activate`, `deactivate`, `status`) + error mapping
 - [ ] Capabilities / permissions allow-list

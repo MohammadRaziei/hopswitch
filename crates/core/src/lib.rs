@@ -3,6 +3,8 @@
 //! This crate has no dependency on Tauri or on any operating system API,
 //! which keeps it fast to compile and trivial to unit-test.
 
+pub mod managed_block;
+
 mod dns;
 mod error;
 mod profile;

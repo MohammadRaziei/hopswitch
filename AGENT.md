@@ -22,6 +22,7 @@ system-tray menu. It does not run or ship any proxy server.
 4. **Always snapshot before applying.** Turning a profile off must restore the exact previous system state.
 5. **No `unwrap`/`expect`/`panic!` in non-test code.** Return typed errors (`thiserror`).
 6. **Least privilege.** Tauri capabilities are allow-listed per command; DNS changes that need admin rights go through a dedicated helper, never by running the whole app elevated.
+7. **Never edit system files destructively.** Files we do not own (e.g. `/etc/resolv.conf`) are only modified through `core::managed_block`: one marked block (`hopswitch begin` … `hopswitch end`) at the top, everything else preserved byte-for-byte, nothing deleted. Refuse (do not guess) if markers look damaged. Before the first write, keep a full backup copy. Prefer the OS's own tools (`resolvectl`, `nmcli`, `networksetup`, registry APIs) over editing files whenever the file is managed by another service.
 
 ## TDD workflow (mandatory)
 
