@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hopswitch — First run</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Vazirmatn:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif}
+.btn{background:transparent;border:1px solid #333A48;color:#E8EAF0;border-radius:10px;padding:10px 16px;font:inherit;font-size:14px;cursor:pointer}
+.pri{background:#34D399;color:#04130C;border:0;border-radius:10px;padding:11px 20px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.lbl{font-size:12px;color:#9AA3B2}
+</style>
+</helmet>
+<div style="width:960px;height:600px;display:flex;background:#0F1115;color:#E8EAF0">
+<aside style="width:280px;border-right:1px solid #262B36;padding:20px;box-sizing:border-box;display:flex;flex-direction:column">
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:18px"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg><b style="font-size:18px">Hopswitch</b></div>
+<div class="lbl" style="letter-spacing:.08em">PROFILES</div>
+<p class="lbl" style="font-size:13px;margin-top:12px">No profiles yet. Your first one will show up here.</p>
+</aside>
+<main style="flex:1;display:flex;flex-direction:column;padding:24px 32px;box-sizing:border-box">
+<div style="display:flex;gap:12px;align-items:center;background:#2A2312;border:1px solid #6B5A1F;border-radius:12px;padding:12px 16px;font-size:13px">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FBBF24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 2 20h20zM12 10v4m0 3h.01"/></svg>
+<span style="flex:1">Changing DNS needs administrator permission. Hopswitch asks once and never runs the whole app elevated.</span>
+<button class="btn" style="padding:6px 12px;font-size:13px">Grant access</button></div>
+<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:14px">
+<div style="width:88px;height:88px;border-radius:50%;background:#13201D;border:1px solid #2C5A4C;display:flex;align-items:center;justify-content:center"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#34D399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg></div>
+<h1 style="margin:0;font-size:26px;font-weight:600">Create your first profile</h1>
+<p style="margin:0;max-width:380px;font-size:14px;color:#9AA3B2;line-height:1.6">Save a proxy and DNS setup, then switch it on with one click, or straight from the tray.</p>
+<div style="display:flex;gap:10px;margin-top:6px"><button class="pri">Create profile</button><button class="btn">Paste a proxy URL</button></div>
+</div>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":960,"height":600}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

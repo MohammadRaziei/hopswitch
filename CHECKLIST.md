@@ -23,6 +23,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] `managed_block`: safe, reversible edits of foreign files (marked block at top, byte-exact restore, refuses damaged markers) — ADR-0003
 
 ### ⬜ Step 2 — System abstraction & profile service
+- [ ] Split `Profile` into independent `ProxyProfile` and `DnsProfile` (ADR-0004), each with its own activation and snapshot
 - [ ] `SystemNetwork` trait: read / apply / restore proxy and DNS
 - [ ] `SystemSnapshot` captured before the first apply (includes a full copy of any file we will edit)
 - [ ] `ProfileService`: activate, deactivate (restore snapshot), switch A→B without losing the original snapshot
@@ -49,10 +50,13 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 
 ### ⬜ Step 8 — Design system & frontend scaffold
 - [ ] Generate `design-system/MASTER.md` with ui-ux-pro-max (dark-first, desktop utility app)
+- [ ] Run Impeccable critique/audit/harden on the real UI; add `npx impeccable detect` to CI
+- [ ] Align outdated design boards (Editor, Empty, Rtl) with ADR-0004
 - [ ] Vite + React + TS + Tailwind, Vitest + `mockIPC`, ESLint, i18n (fa / en), RTL
 
 ### ⬜ Step 9 — UI screens
-- [ ] Profile list with big on/off switch and live status
+- [ ] Two independent panels (Proxy, DNS), each with switch, active card, saved list
+- [ ] Icon rail navigation; Settings and About pages (Safety: restore on quit, backup before first change)
 - [ ] Profile editor (proxy URL field with inline validation, DNS chips, bypass list)
 - [ ] Empty / loading / error states, toasts, keyboard shortcuts
 

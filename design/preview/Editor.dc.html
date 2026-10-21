@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hopswitch — Edit profile</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Vazirmatn:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:Inter,system-ui,sans-serif}
+.in{width:100%;box-sizing:border-box;padding:11px 12px;border-radius:10px;border:1px solid #333A48;background:#0F1115;color:#E8EAF0;font:inherit;font-size:14px}
+.bad{border-color:#F87171}
+.card{background:#171A21;border:1px solid #262B36;border-radius:14px;padding:20px}
+.lbl{display:block;font-size:12px;color:#9AA3B2;margin-bottom:6px}
+.hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.sw{width:44px;height:26px;border-radius:999px;border:0;background:#34D399;padding:3px;display:flex;justify-content:flex-end;cursor:pointer}
+.kn{width:20px;height:20px;border-radius:50%;background:#04130C}
+.chip{display:inline-block;padding:4px 6px 4px 10px;border-radius:999px;background:#222733;color:#C9D0DC;font-size:12px;margin:0 4px 6px 0}
+.cx{border:0;background:none;color:#9AA3B2;cursor:pointer;font:inherit;padding:0 4px}
+.btn{background:transparent;border:1px solid #333A48;color:#E8EAF0;border-radius:10px;padding:10px 16px;font:inherit;font-size:14px;cursor:pointer}
+.pri{background:#34D399;color:#04130C;border:0;border-radius:10px;padding:10px 16px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.ok{color:#34D399;font-size:12px;margin-top:8px}
+.err{color:#FCA5A5;font-size:12px;margin-top:8px}
+.hint{color:#9AA3B2;font-size:12px;margin-top:10px}
+</style>
+</helmet>
+<div style="width:960px;height:720px;background:#0F1115;color:#E8EAF0;display:flex;flex-direction:column;box-sizing:border-box">
+<header style="display:flex;align-items:center;gap:12px;padding:18px 32px;border-bottom:1px solid #262B36">
+<button class="btn" aria-label="Back to profiles" style="padding:8px"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5m6-6-6 6 6 6"/></svg></button>
+<h1 style="margin:0;font-size:20px;font-weight:600">Edit profile</h1>
+</header>
+<div style="flex:1;padding:28px 32px;display:flex;flex-direction:column;gap:20px">
+<div style="max-width:420px"><label class="lbl" for="n">Profile name</label><input id="n" class="in" value="Office"></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+<section class="card">
+<div class="hd"><b>Proxy</b><button class="sw" role="switch" aria-checked="true" aria-label="Use a proxy"><span class="kn"></span></button></div>
+<label class="lbl" for="u">Proxy URL</label>
+<input id="u" class="in" value="socks5://127.0.0.1:1080">
+<div class="ok">✓ Valid SOCKS5 proxy · host 127.0.0.1 · port 1080</div>
+<div class="lbl" style="margin-top:20px">Bypass: these hosts never use the proxy</div>
+<span class="chip">localhost<button class="cx" aria-label="Remove localhost">×</button></span><span class="chip">*.local<button class="cx" aria-label="Remove *.local">×</button></span>
+<input class="in" aria-label="Add bypass host" placeholder="Add a host, e.g. 10.0.0.0/8" style="margin-top:6px">
+</section>
+<section class="card">
+<div class="hd"><b>DNS servers</b><button class="sw" role="switch" aria-checked="true" aria-label="Use custom DNS"><span class="kn"></span></button></div>
+<span class="chip">1.1.1.1<button class="cx" aria-label="Remove 1.1.1.1">×</button></span><span class="chip">8.8.8.8<button class="cx" aria-label="Remove 8.8.8.8">×</button></span>
+<label class="lbl" for="d" style="margin-top:8px">Add a server</label>
+<input id="d" class="in bad" value="300.1.1.1">
+<div class="err">⚠ “300.1.1.1” is not a valid IP address</div>
+<div class="lbl" style="margin-top:18px">Quick presets</div>
+<button class="btn" style="padding:6px 12px;font-size:12px">Cloudflare</button> <button class="btn" style="padding:6px 12px;font-size:12px">Google</button> <button class="btn" style="padding:6px 12px;font-size:12px">Quad9</button>
+<div class="hint">Up to 4 servers. On Linux only the first 3 are used by the system.</div>
+</section>
+</div>
+</div>
+<footer style="display:flex;align-items:center;gap:10px;padding:16px 32px;border-top:1px solid #262B36">
+<button class="btn" style="border:0;color:#FCA5A5;margin-inline-end:auto">Delete profile</button>
+<button class="btn">Cancel</button><button class="btn">Save</button><button class="pri">Save &amp; activate</button>
+</footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":960,"height":720}}'>
+class Component extends DCLogic {
+renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
