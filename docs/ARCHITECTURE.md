@@ -18,6 +18,7 @@
 ```
 
 * **core** is a hexagonal "domain + ports" crate. It never touches the OS.
+* **storage** implements the persistence ports (profiles, sessions) with atomic, versioned JSON files (ADR-0007).
 * **platform-\*** crates are adapters; each is small and integration-tested on its own OS in CI.
 * **src-tauri** is a thin composition root: wires adapters into services and exposes commands.
 

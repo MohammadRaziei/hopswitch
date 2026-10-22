@@ -32,16 +32,18 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] `testing::{InMemoryNetwork, InMemoryStore}` with failure injection and call counters
 - [ ] (moved to Step 6) full copy of a file we will edit: lives in the Linux adapter's `Other { raw }` payload + `managed_block`
 
-### ⬜ Step 3b — Preset catalog (ADR-0006)
-- [ ] `presets` module in `core`: DNS and proxy presets as data; tests that every preset validates and ids are unique
-- [ ] "already saved" detection (compare preset config with saved profiles)
-- [ ] verify preset values against provider docs before release
+### ✅ Step 3b — Preset catalog (ADR-0006)
+- [x] `presets` module in core: 6 DNS presets (Cloudflare, Google, Quad9, OpenDNS, AdGuard, Shecan) and 7 proxy presets (v2rayN SOCKS 10808 / HTTP 10809, Clash 7890, Clash Verge 7897, Shadowsocks 1080, Tor 9050, Tor Browser 9150); pure data, `to_profile(id)`, `is_saved_in(&Profiles)`
+- [x] Tests: every preset validates, ids are unique slugs, documented values are pinned, proxy presets are loopback-only
+- [x] Values checked against public sources (v2rayN ports, Clash/Mihomo/Clash Verge ports, Shecan free-plan IPs via third-party docs)
+- [ ] Before release: re-verify against each provider's *official* docs (Shecan was only confirmed through third-party scripts); **Electro** was left out because no reliable source for its addresses was found
 
-### ⬜ Step 3 — Persistence
-- [ ] `ProfileRepository` trait + JSON file implementation
-- [ ] JSON-file `SessionStore` (the port already exists; must be durable: write + fsync + atomic rename)
-- [ ] Atomic writes (temp file + rename), schema `version` field, corrupt-file recovery
-- [ ] Tests with temp directories
+### ✅ Step 3 — Persistence (ADR-0007)
+- [x] `Profiles` collection in core: unique ids per kind, insertion order, add / replace / remove, validating serde
+- [x] `ProfileRepository` port + `JsonFileRepository` (new crate `hopswitch-storage`): versioned file, missing file = empty, corrupt / newer-version detection, explicit `quarantine_corrupt`
+- [x] `write_atomic` (temp + fsync + rename + dir fsync), creates parent directories
+- [x] Durable `JsonFileSessionStore` (+ `load` for resume); end-to-end "crash then restore original" test
+- [x] Tests with temp directories
 
 ### ⬜ Step 4 — Windows adapter (registry proxy + `InternetSetOption`, DNS via PowerShell/netsh)
 ### ⬜ Step 5 — macOS adapter (`networksetup`, per-service handling)
@@ -55,6 +57,9 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [ ] Commands (`list_profiles`, `save_profile`, `delete_profile`, `activate`, `deactivate`, `status`) + error mapping
 - [ ] Capabilities / permissions allow-list
 - [ ] Tray icon + quick-switch menu, single-instance, autostart
+
+### ⬜ Step 7b — CLI (`crates/cli`)
+- [ ] `hopswitch dns use <preset|id>`, `hopswitch proxy use <preset|id>`, `hopswitch off`, `hopswitch status`; same services and adapters as the app (no logic of its own)
 
 ### ⬜ Step 8 — Design system & frontend scaffold
 - [ ] Generate `design-system/MASTER.md` with ui-ux-pro-max (dark-first, desktop utility app)

@@ -1,0 +1,19 @@
+[package]
+name = "hopswitch-storage"
+description = "File-based persistence (profiles and sessions) for Hopswitch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+hopswitch-core = { path = "../core" }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+# Pinned: newer releases need a Rust toolchain with edition 2024 support.
+tempfile = "=3.10.1"

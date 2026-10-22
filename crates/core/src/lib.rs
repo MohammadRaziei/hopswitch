@@ -9,16 +9,24 @@ pub mod testing;
 mod dns;
 mod error;
 mod network;
+mod presets;
 mod profile;
+mod profiles;
 mod proxy;
+mod repository;
 mod service;
 mod session;
 
 pub use dns::{DnsConfig, MAX_DNS_SERVERS};
 pub use error::ValidationError;
 pub use network::{DnsState, ProxyState, SystemError, SystemNetwork};
+pub use presets::{
+    dns_preset, dns_presets, proxy_preset, proxy_presets, DnsPreset, DnsPresetGroup, ProxyPreset,
+};
 pub use profile::{DnsProfile, ProxyProfile, MAX_NAME_CHARS};
+pub use profiles::{Profiles, ProfilesError};
 pub use proxy::{ProxyConfig, ProxyScheme};
+pub use repository::{ProfileRepository, RepositoryError};
 pub use service::{
     restore_all, DnsKind, DnsService, Kind, NetworkService, ProxyKind, ProxyService,
     RestoreAllError, ServiceError,

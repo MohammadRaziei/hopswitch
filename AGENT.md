@@ -10,6 +10,7 @@ system-tray menu. It does not run or ship any proxy server.
 |------------------|-----------------------------------------------------|
 | Shell            | Tauri 2 (Rust)                                      |
 | Core logic       | `crates/core` — pure Rust, **no Tauri / OS imports** |
+| Persistence      | `crates/storage` — JSON files, atomic writes        |
 | OS adapters      | `crates/platform-*` (added in later steps)          |
 | Frontend         | React + TypeScript + Tailwind + Vitest              |
 | Design source    | `design-system/MASTER.md` (generated with ui-ux-pro-max) |
@@ -18,7 +19,7 @@ system-tray menu. It does not run or ship any proxy server.
 
 1. **Dependencies point inward.** `src-tauri` → `platform-*` → `core`. `core` depends on nothing OS-specific.
 2. **OS access only behind a trait** defined in `core` (`SystemNetwork`, introduced in Step 2). Services are tested with in-memory fakes; real adapters get thin integration tests.
-3. **Parse, don't validate.** Domain types (`ProxyConfig`, `DnsConfig`, `Profile`) can only be constructed valid, including via `serde` (`try_from`). Never add a public constructor or `pub` field that bypasses validation.
+3. **Parse, don't validate.** Domain types (`ProxyConfig`, `DnsConfig`, `ProxyProfile`, `DnsProfile`, `Profiles`) can only be constructed valid, including via `serde` (`try_from`). Never add a public constructor or `pub` field that bypasses validation.
 4. **Always snapshot before applying.** Turning a profile off must restore the exact previous system state.
 5. **No `unwrap`/`expect`/`panic!` in non-test code.** Return typed errors (`thiserror`).
 6. **Least privilege.** Tauri capabilities are allow-listed per command; DNS changes that need admin rights go through a dedicated helper, never by running the whole app elevated.
@@ -58,7 +59,8 @@ hopswitch/
 ├── AGENT.md  CHECKLIST.md  README.md
 ├── Cargo.toml                 # workspace
 ├── crates/
-│   ├── core/                  # domain + services (pure Rust)
+│   ├── core/                  # domain + services + ports (pure Rust)
+│   ├── storage/               # JSON profile repository, session store
 │   └── platform-*/            # OS adapters            (later)
 ├── src-tauri/                 # Tauri shell, commands, tray (later)
 ├── src/                       # React frontend              (later)
