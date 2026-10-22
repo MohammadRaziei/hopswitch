@@ -22,16 +22,24 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] Deserialisation re-validates (no invalid state can be loaded from disk)
 - [x] `managed_block`: safe, reversible edits of foreign files (marked block at top, byte-exact restore, refuses damaged markers) — ADR-0003
 
-### ⬜ Step 2 — System abstraction & profile service
-- [ ] Split `Profile` into independent `ProxyProfile` and `DnsProfile` (ADR-0004), each with its own activation and snapshot
-- [ ] `SystemNetwork` trait: read / apply / restore proxy and DNS
-- [ ] `SystemSnapshot` captured before the first apply (includes a full copy of any file we will edit)
-- [ ] `ProfileService`: activate, deactivate (restore snapshot), switch A→B without losing the original snapshot
-- [ ] Partial-failure handling (proxy applied, DNS failed → rollback)
-- [ ] In-memory fake adapter used by the tests
+### ✅ Step 2 — System abstraction & services (ADR-0004, ADR-0005)
+- [x] `Profile` split into independent `ProxyProfile` and `DnsProfile` (shared id/name validation, serde re-validation)
+- [x] `SystemNetwork` port: `read_*` / `write_*` for proxy and DNS (apply and restore share one primitive); `SystemError`
+- [x] `ProxyState` / `DnsState` model what was really there (`Disabled`/`Automatic`, `Manual`, opaque `Other { raw }`), serialisable
+- [x] `Session` (original snapshot + active id) persisted through the `SessionStore` port **before** the first change
+- [x] `ProxyService` / `DnsService` (one generic `NetworkService`): activate, switch A→B keeping the original, idempotent activate, deactivate (exact restore), `resume` after restart, `restore_all` for "restore on quit"
+- [x] Failure handling per service: apply failure rolls back to the pre-call state; rollback failure and restore failure are reported distinctly and keep the session for a retry. No cross-kind rollback: proxy and DNS are independent by design
+- [x] `testing::{InMemoryNetwork, InMemoryStore}` with failure injection and call counters
+- [ ] (moved to Step 6) full copy of a file we will edit: lives in the Linux adapter's `Other { raw }` payload + `managed_block`
+
+### ⬜ Step 3b — Preset catalog (ADR-0006)
+- [ ] `presets` module in `core`: DNS and proxy presets as data; tests that every preset validates and ids are unique
+- [ ] "already saved" detection (compare preset config with saved profiles)
+- [ ] verify preset values against provider docs before release
 
 ### ⬜ Step 3 — Persistence
 - [ ] `ProfileRepository` trait + JSON file implementation
+- [ ] JSON-file `SessionStore` (the port already exists; must be durable: write + fsync + atomic rename)
 - [ ] Atomic writes (temp file + rename), schema `version` field, corrupt-file recovery
 - [ ] Tests with temp directories
 

@@ -1,7 +1,7 @@
-//! Behavioural tests for `Profile`.
+//! Behavioural tests for `ProxyProfile` and `DnsProfile`.
 
 use hopswitch_core::{
-    DnsConfig, Profile, ProxyConfig, ProxyScheme, ValidationError, MAX_NAME_CHARS,
+    DnsConfig, DnsProfile, ProxyConfig, ProxyProfile, ProxyScheme, ValidationError, MAX_NAME_CHARS,
 };
 
 fn proxy() -> ProxyConfig {
@@ -13,41 +13,51 @@ fn dns() -> DnsConfig {
 }
 
 #[test]
-fn creates_a_profile_with_proxy_and_dns() {
-    let p = Profile::new("p1", "Work", Some(proxy()), Some(dns())).unwrap();
+fn creates_a_proxy_profile() {
+    let p = ProxyProfile::new("p1", "Work", proxy()).unwrap();
 
     assert_eq!(p.id(), "p1");
     assert_eq!(p.name(), "Work");
-    assert_eq!(p.proxy(), Some(&proxy()));
-    assert_eq!(p.dns(), Some(&dns()));
+    assert_eq!(p.config(), &proxy());
 }
 
 #[test]
-fn allows_proxy_only_and_dns_only_profiles() {
-    assert!(Profile::new("a", "Proxy only", Some(proxy()), None).is_ok());
-    assert!(Profile::new("b", "DNS only", None, Some(dns())).is_ok());
-}
+fn creates_a_dns_profile() {
+    let p = DnsProfile::new("d1", "Cloudflare", dns()).unwrap();
 
-#[test]
-fn rejects_a_profile_with_nothing_configured() {
-    let err = Profile::new("p1", "Empty", None, None).unwrap_err();
-    assert_eq!(err, ValidationError::EmptyProfile);
+    assert_eq!(p.id(), "d1");
+    assert_eq!(p.name(), "Cloudflare");
+    assert_eq!(p.config(), &dns());
 }
 
 #[test]
 fn trims_the_name() {
-    let p = Profile::new("p1", "  Work  ", Some(proxy()), None).unwrap();
-    assert_eq!(p.name(), "Work");
+    assert_eq!(
+        ProxyProfile::new("p1", "  Work  ", proxy()).unwrap().name(),
+        "Work"
+    );
+    assert_eq!(
+        DnsProfile::new("d1", "  Home ", dns()).unwrap().name(),
+        "Home"
+    );
 }
 
 #[test]
 fn rejects_empty_names_and_ids() {
     assert_eq!(
-        Profile::new("p1", "   ", Some(proxy()), None).unwrap_err(),
+        ProxyProfile::new("p1", "   ", proxy()).unwrap_err(),
         ValidationError::EmptyName
     );
     assert_eq!(
-        Profile::new(" ", "Work", Some(proxy()), None).unwrap_err(),
+        ProxyProfile::new(" ", "Work", proxy()).unwrap_err(),
+        ValidationError::EmptyId
+    );
+    assert_eq!(
+        DnsProfile::new("d1", "", dns()).unwrap_err(),
+        ValidationError::EmptyName
+    );
+    assert_eq!(
+        DnsProfile::new("", "Home", dns()).unwrap_err(),
         ValidationError::EmptyId
     );
 }
@@ -55,26 +65,39 @@ fn rejects_empty_names_and_ids() {
 #[test]
 fn name_length_is_counted_in_characters_not_bytes() {
     let persian_ok = "پ".repeat(MAX_NAME_CHARS);
-    assert!(Profile::new("p1", persian_ok, Some(proxy()), None).is_ok());
+    assert!(ProxyProfile::new("p1", persian_ok.clone(), proxy()).is_ok());
+    assert!(DnsProfile::new("d1", persian_ok, dns()).is_ok());
 
     let too_long = "پ".repeat(MAX_NAME_CHARS + 1);
+    let expected = ValidationError::NameTooLong {
+        max: MAX_NAME_CHARS,
+    };
     assert_eq!(
-        Profile::new("p1", too_long, Some(proxy()), None).unwrap_err(),
-        ValidationError::NameTooLong {
-            max: MAX_NAME_CHARS
-        }
+        ProxyProfile::new("p1", too_long.clone(), proxy()).unwrap_err(),
+        expected
+    );
+    assert_eq!(
+        DnsProfile::new("d1", too_long, dns()).unwrap_err(),
+        expected
     );
 }
 
 #[test]
 fn serde_round_trip_preserves_the_value() {
-    let p = Profile::new("p1", "Work", Some(proxy()), Some(dns())).unwrap();
-    let back: Profile = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
+    let p = ProxyProfile::new("p1", "Work", proxy()).unwrap();
+    let back: ProxyProfile = serde_json::from_str(&serde_json::to_string(&p).unwrap()).unwrap();
     assert_eq!(back, p);
+
+    let d = DnsProfile::new("d1", "Home", dns()).unwrap();
+    let back: DnsProfile = serde_json::from_str(&serde_json::to_string(&d).unwrap()).unwrap();
+    assert_eq!(back, d);
 }
 
 #[test]
 fn deserialising_an_invalid_profile_is_rejected() {
-    let json = r#"{"id":"p1","name":"","proxy":null,"dns":["1.1.1.1"]}"#;
-    assert!(serde_json::from_str::<Profile>(json).is_err());
+    let empty_name = r#"{"id":"d1","name":"","config":["1.1.1.1"]}"#;
+    assert!(serde_json::from_str::<DnsProfile>(empty_name).is_err());
+
+    let bad_proxy = r#"{"id":"p1","name":"Work","config":{"scheme":"socks5","host":"h","port":0}}"#;
+    assert!(serde_json::from_str::<ProxyProfile>(bad_proxy).is_err());
 }

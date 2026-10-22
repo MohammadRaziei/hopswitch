@@ -52,7 +52,4 @@ pub enum ValidationError {
         /// Maximum number of characters allowed.
         max: usize,
     },
-    /// The profile configures neither a proxy nor DNS.
-    #[error("profile must configure a proxy, DNS, or both")]
-    EmptyProfile,
 }

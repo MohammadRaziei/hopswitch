@@ -8,7 +8,7 @@ from a clean desktop UI or straight from the system tray. Windows · macOS · Li
 
 ## Status
 
-Early development — see [`CHECKLIST.md`](CHECKLIST.md). Step 1 (domain model) is complete.
+Early development, see [`CHECKLIST.md`](CHECKLIST.md). Steps 1 (domain model) and 2 (system port + proxy/DNS services) are complete. New to the project? Start with [`HANDOFF.md`](HANDOFF.md).
 
 ## Development
 
