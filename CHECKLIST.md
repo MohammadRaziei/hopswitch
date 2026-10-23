@@ -45,7 +45,12 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] Durable `JsonFileSessionStore` (+ `load` for resume); end-to-end "crash then restore original" test
 - [x] Tests with temp directories
 
-### ⬜ Step 4 — Windows adapter (registry proxy + `InternetSetOption`, DNS via PowerShell/netsh)
+### 🟨 Step 4 — Windows adapter (ADR-0008)
+- [x] `CommandRunner` port + `FakeRunner` in core; `ProcessRunner` (no console window on Windows)
+- [x] Proxy: registry read/write, `WinINet` refresh, foreign states restored value for value, unsupported cases refused
+- [x] 31 adapter tests with the fake runner (run on any OS) + `proxy_smoke` example for real-machine verification
+- [ ] **Manual check on a real Windows machine** (`cargo run -p hopswitch-platform-windows --example proxy_smoke`): read, apply, restore, crash-restore
+- [ ] DNS (needs admin) → implemented together with Step 10 (elevated helper)
 ### ⬜ Step 5 — macOS adapter (`networksetup`, per-service handling)
 ### ⬜ Step 6 — Linux adapter (GNOME `gsettings`, KDE, `resolvectl` / `nmcli`)
 - [ ] Detect who owns DNS: `systemd-resolved` / NetworkManager → use their CLI; plain static file → managed block

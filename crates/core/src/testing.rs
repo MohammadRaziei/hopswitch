@@ -1,8 +1,12 @@
 //! Test doubles for the ports in `core`, usable from other crates' tests.
 
+use std::collections::VecDeque;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use crate::{DnsState, ProxyState, Session, SessionStore, StoreError, SystemError, SystemNetwork};
+use crate::{
+    CommandOutput, CommandRunner, DnsState, ProxyState, Session, SessionStore, StoreError,
+    SystemError, SystemNetwork,
+};
 
 /// One independently-faultable setting (proxy or DNS).
 struct Channel<S> {
@@ -235,5 +239,89 @@ impl<S: Clone + Send> SessionStore<S> for InMemoryStore<S> {
         }
         inner.saved = None;
         Ok(())
+    }
+}
+
+/// One command a [`FakeRunner`] was asked to run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordedCall {
+    /// The program name.
+    pub program: String,
+    /// Its arguments.
+    pub args: Vec<String>,
+}
+
+#[derive(Default)]
+struct RunnerInner {
+    responses: VecDeque<Result<CommandOutput, SystemError>>,
+    calls: Vec<RecordedCall>,
+}
+
+/// A [`CommandRunner`] that records calls and returns scripted responses.
+///
+/// Responses are consumed in order; once they run out every command succeeds
+/// with empty output.
+#[derive(Default)]
+pub struct FakeRunner {
+    inner: Mutex<RunnerInner>,
+}
+
+impl FakeRunner {
+    /// A runner with no scripted responses.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Queues a successful run that printed `stdout`.
+    pub fn push_stdout(&self, stdout: impl Into<String>) {
+        self.push(Ok(CommandOutput {
+            success: true,
+            stdout: stdout.into(),
+            stderr: String::new(),
+        }));
+    }
+
+    /// Queues a run that exited unsuccessfully with `stderr`.
+    pub fn push_failure(&self, stderr: impl Into<String>) {
+        self.push(Ok(CommandOutput {
+            success: false,
+            stdout: String::new(),
+            stderr: stderr.into(),
+        }));
+    }
+
+    /// Queues a run that could not even start.
+    pub fn push_error(&self, error: SystemError) {
+        self.push(Err(error));
+    }
+
+    /// Every command run so far, in order.
+    pub fn calls(&self) -> Vec<RecordedCall> {
+        self.lock().calls.clone()
+    }
+
+    fn push(&self, response: Result<CommandOutput, SystemError>) {
+        self.lock().responses.push_back(response);
+    }
+
+    fn lock(&self) -> MutexGuard<'_, RunnerInner> {
+        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl CommandRunner for FakeRunner {
+    fn run(&self, program: &str, args: &[String]) -> Result<CommandOutput, SystemError> {
+        let mut inner = self.lock();
+        inner.calls.push(RecordedCall {
+            program: program.to_owned(),
+            args: args.to_vec(),
+        });
+        inner.responses.pop_front().unwrap_or_else(|| {
+            Ok(CommandOutput {
+                success: true,
+                stdout: String::new(),
+                stderr: String::new(),
+            })
+        })
     }
 }

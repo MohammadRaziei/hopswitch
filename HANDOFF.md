@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-21, end of "Step 3b")
+# HANDOFF — Hopswitch (state at 2026-10-21, end of "Step 4 (proxy)")
 
 > **Paste-in starter for the new chat (the user writes Persian, informal):**
 > «سلام! پروژه‌ی Hopswitch رو از چت قبلی ادامه می‌دیم. zip پروژه و HANDOFF.md پیوست شده.
@@ -41,7 +41,7 @@ hopswitch/
 
 Git history (4+1 commits): domain model → rename to Hopswitch → `managed_block` → UI direction/design → this handoff.
 
-**Tests: 131 passing** (core 101, storage 30). Quality gate (must pass before every commit):
+**Tests: 165 passing** (core 104, storage 30, platform-windows 31). Quality gate (must pass before every commit):
 
 ```bash
 cargo fmt --all --check
@@ -79,9 +79,14 @@ Use one `JsonFileSessionStore` path per kind (proxy / DNS).
 Step 3b (preset catalog) is **done**: `dns_presets()`, `proxy_presets()`, `dns_preset(id)`, `proxy_preset(id)`,
 `DnsPreset`/`ProxyPreset` (`id/name/tag/config()/to_profile(id)/is_saved_in(&Profiles)`), `DnsPresetGroup`.
 
-Recommended next: **first platform adapter** (Step 4 Windows / 5 macOS / 6 Linux): implement `SystemNetwork`
-in a new `crates/platform-<os>` crate (ask the user which OS they run). Then **Step 7b — CLI** so it can be tried
-for real before any UI exists.
+Step 4 is **partly done** (ADR-0008): `crates/platform-windows` has `WindowsNetwork::{new(runner), system()}`
+with the full proxy adapter; DNS there returns `Unsupported` until Step 10. Core gained `CommandRunner`,
+`CommandOutput`, `testing::FakeRunner`. The adapter has only been tested with fakes: the user must run
+`cargo run -p hopswitch-platform-windows --example proxy_smoke` on real Windows (see example docs) and report back.
+
+Recommended next: **Step 7b — CLI** (`crates/cli`: `status`, `proxy use <preset|id>`, `off`) on top of the services,
+storage and `WindowsNetwork`, so the user can use it for real; then Step 5/6 adapters or Step 7 Tauri.
+(The OS was assumed to be Windows; confirm with the user.)
 
 TDD as always: red → green → refactor → gate → checklist → commit → zip.
 

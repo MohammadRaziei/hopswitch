@@ -19,7 +19,7 @@ mod session;
 
 pub use dns::{DnsConfig, MAX_DNS_SERVERS};
 pub use error::ValidationError;
-pub use network::{DnsState, ProxyState, SystemError, SystemNetwork};
+pub use network::{CommandOutput, CommandRunner, DnsState, ProxyState, SystemError, SystemNetwork};
 pub use presets::{
     dns_preset, dns_presets, proxy_preset, proxy_presets, DnsPreset, DnsPresetGroup, ProxyPreset,
 };

@@ -1,0 +1,20 @@
+[package]
+name = "hopswitch-platform-windows"
+description = "Windows adapter: system proxy via the registry and WinINet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+hopswitch-core = { path = "../core" }
+serde.workspace = true
+serde_json.workspace = true
+base64 = "0.22"
+
+[dev-dependencies]
+hopswitch-storage = { path = "../storage" }
+tempfile = "=3.10.1"

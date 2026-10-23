@@ -81,3 +81,24 @@ pub trait SystemNetwork: Send + Sync {
     /// Makes the system DNS match `state`.
     fn write_dns(&self, state: &DnsState) -> Result<(), SystemError>;
 }
+
+/// What a finished external command printed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandOutput {
+    /// Whether the command exited successfully.
+    pub success: bool,
+    /// Everything written to standard output.
+    pub stdout: String,
+    /// Everything written to standard error.
+    pub stderr: String,
+}
+
+/// Runs external programs for OS adapters (`powershell`, `networksetup`, ...).
+///
+/// A port so adapter logic can be tested on any machine with
+/// [`crate::testing::FakeRunner`]. `Err` means the program could not be run at
+/// all; a program that ran and failed is `Ok` with `success == false`.
+pub trait CommandRunner: Send + Sync {
+    /// Runs `program` with `args` and waits for it to finish.
+    fn run(&self, program: &str, args: &[String]) -> Result<CommandOutput, SystemError>;
+}
