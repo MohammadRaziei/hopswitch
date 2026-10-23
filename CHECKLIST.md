@@ -63,8 +63,11 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [ ] Capabilities / permissions allow-list
 - [ ] Tray icon + quick-switch menu, single-instance, autostart
 
-### ⬜ Step 7b — CLI (`crates/cli`)
-- [ ] `hopswitch dns use <preset|id>`, `hopswitch proxy use <preset|id>`, `hopswitch off`, `hopswitch status`; same services and adapters as the app (no logic of its own)
+### ✅ Step 7b — CLI (`crates/cli`)
+- [x] `hopswitch proxy|dns use <name|preset>`, `off`, `list`, `add`, `remove`; `hopswitch off`, `status`, `presets`, `help` — same services and adapters as the app (no logic of its own)
+- [x] Profiles load lazily (`off` works even if `profiles.json` is corrupt); damaged files are reported and never modified
+- [x] 38 tests (parser, settings folder, end-to-end behaviour against an in-memory system + temp dir)
+- [ ] Manual check on a real Windows machine: `hopswitch proxy use v2rayn-socks`, `hopswitch off`
 
 ### ⬜ Step 8 — Design system & frontend scaffold
 - [ ] Generate `design-system/MASTER.md` with ui-ux-pro-max (dark-first, desktop utility app)

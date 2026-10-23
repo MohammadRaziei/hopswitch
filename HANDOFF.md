@@ -1,8 +1,8 @@
-# HANDOFF — Hopswitch (state at 2026-10-21, end of "Step 4 (proxy)")
+# HANDOFF — Hopswitch (state at 2026-10-24, Step 7b CLI done; next: real-machine check, then Step 5/6/7)
 
 > **Paste-in starter for the new chat (the user writes Persian, informal):**
 > «سلام! پروژه‌ی Hopswitch رو از چت قبلی ادامه می‌دیم. zip پروژه و HANDOFF.md پیوست شده.
-> اول `HANDOFF.md`, `AGENT.md`, `CHECKLIST.md` و `docs/adr/*` رو بخون، بعد بریم استپ ۳ با TDD.»
+> اول `HANDOFF.md`, `AGENT.md`, `CHECKLIST.md` و `docs/adr/*` رو بخون، بعد `crates/cli/src/app.rs` رو با TDD تموم کنیم (بخش ۵).»
 > Reply in Persian (casual, friendly); code, comments and docs stay in English.
 
 ## 1. What this project is
@@ -35,13 +35,18 @@ hopswitch/
 │   └── tests/*.rs        # public-API tests
 ├── crates/storage/       # package `hopswitch-storage`: write_atomic, JsonFileRepository, JsonFileSessionStore
 │   └── tests/{atomic,repository,session_store}.rs   # temp-dir tests
+├── crates/platform-windows/  # package `hopswitch-platform-windows`: WindowsNetwork (proxy), ProcessRunner
+│   ├── src/{lib,registry,runner,network}.rs   # registry = pure parse/plan/render
+│   ├── tests/proxy.rs                         # 31 tests via FakeRunner
+│   └── examples/proxy_smoke.rs                # real-machine check (read / apply / restore)
+├── crates/cli/           # package `hopswitch-cli`, binary `hopswitch` — WORK IN PROGRESS, NOT A WORKSPACE MEMBER (see §5)
 ├── design/               # README + static UI mockups (design/preview/*.dc.html, canvas.json)
 └── docs/{ARCHITECTURE.md, adr/0001..0004}
 ```
 
-Git history (4+1 commits): domain model → rename to Hopswitch → `managed_block` → UI direction/design → this handoff.
+Git history: domain model → rename → `managed_block` → UI direction → handoff → Steps 2, 3, 3b, 4. HEAD = `7a75f7d feat(platform-windows): ...`. **Uncommitted:** `crates/cli/` (new, unfinished) and the `Cargo.toml`/`Cargo.lock` changes.
 
-**Tests: 165 passing** (core 104, storage 30, platform-windows 31). Quality gate (must pass before every commit):
+**Tests: 165 passing at the last green gate** (core 104, storage 30, platform-windows 31), run *before* the CLI crate was added. The CLI crate has never been compiled. Quality gate (must pass before every commit):
 
 ```bash
 cargo fmt --all --check
@@ -68,25 +73,17 @@ cargo test
 
 Architecture rules (AGENT.md): dependencies point inward (`src-tauri → platform-* → core`); OS access only behind a trait in `core`; parse-don't-validate; **always snapshot before applying** and restore exactly on off; no `unwrap/expect/panic` outside tests; least privilege (no running the whole app elevated).
 
-## 5. NEXT: pick one (start here)
+## 5. NEXT: CLI is finished (Step 7b)
 
-Steps 1–3 are **done** (see CHECKLIST.md, ADR-0005/0007). Public API now also includes:
-`Profiles` (`add_/replace_/remove_proxy|dns`, `proxy(id)`, `dns(id)`, `proxy_profiles()`, `dns_profiles()`),
-`ProfileRepository` + `RepositoryError`, and in `hopswitch-storage`: `write_atomic`,
-`JsonFileRepository::{new, quarantine_corrupt}`, `JsonFileSessionStore::{new, load::<S>()}`.
-Use one `JsonFileSessionStore` path per kind (proxy / DNS).
+`crates/cli` is a workspace member again; `app.rs` is written and all 203 tests pass (core 104, storage 30,
+platform-windows 31, cli 38); fmt + clippy (`-D warnings`) clean.
+Behaviour notes: DNS `Automatic` shows as `automatic (from the network)` in `status`; `off` with nothing active is a no-op without writes.
 
-Step 3b (preset catalog) is **done**: `dns_presets()`, `proxy_presets()`, `dns_preset(id)`, `proxy_preset(id)`,
-`DnsPreset`/`ProxyPreset` (`id/name/tag/config()/to_profile(id)/is_saved_in(&Profiles)`), `DnsPresetGroup`.
-
-Step 4 is **partly done** (ADR-0008): `crates/platform-windows` has `WindowsNetwork::{new(runner), system()}`
-with the full proxy adapter; DNS there returns `Unsupported` until Step 10. Core gained `CommandRunner`,
-`CommandOutput`, `testing::FakeRunner`. The adapter has only been tested with fakes: the user must run
-`cargo run -p hopswitch-platform-windows --example proxy_smoke` on real Windows (see example docs) and report back.
-
-Recommended next: **Step 7b — CLI** (`crates/cli`: `status`, `proxy use <preset|id>`, `off`) on top of the services,
-storage and `WindowsNetwork`, so the user can use it for real; then Step 5/6 adapters or Step 7 Tauri.
-(The OS was assumed to be Windows; confirm with the user.)
+**In this order of value:**
+1. **Ask the user to run the Windows smoke test** (`cargo run -p hopswitch-platform-windows --example proxy_smoke`, then `-- apply v2rayn-socks`) and report the output: the Windows adapter has only ever been tested with fakes. Once the CLI works, `hopswitch proxy use v2rayn-socks` / `hopswitch off` on his machine is the best real test.
+2. Step 5 (macOS) / Step 6 (Linux) adapters, or Step 7 (Tauri shell), depending on what the user wants. **The OS was assumed to be Windows; the user never confirmed.**
+3. Windows DNS needs administrator rights: implemented together with Step 10 (elevated helper). Until then `WindowsNetwork` DNS calls return `Unsupported`.
+4. Before release: re-verify preset values against official docs (Shecan was confirmed only through third-party scripts; **Electro** was left out for lack of a reliable source). Revisit the `tempfile = "=3.10.1"` pin when the minimum Rust version is decided.
 
 TDD as always: red → green → refactor → gate → checklist → commit → zip.
 

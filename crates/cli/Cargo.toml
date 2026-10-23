@@ -1,0 +1,22 @@
+[package]
+name = "hopswitch-cli"
+description = "Command-line interface for Hopswitch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "hopswitch"
+path = "src/main.rs"
+
+[dependencies]
+hopswitch-core = { path = "../core" }
+hopswitch-storage = { path = "../storage" }
+hopswitch-platform-windows = { path = "../platform-windows" }
+
+[dev-dependencies]
+tempfile = "=3.10.1"
