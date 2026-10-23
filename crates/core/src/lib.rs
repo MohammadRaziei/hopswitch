@@ -6,6 +6,8 @@
 pub mod managed_block;
 pub mod testing;
 
+mod autopilot;
+mod connectivity;
 mod dns;
 mod error;
 mod network;
@@ -17,6 +19,8 @@ mod repository;
 mod service;
 mod session;
 
+pub use autopilot::{AutoSettings, Autopilot, Decision, Health, Probe};
+pub use connectivity::{ConnectivitySettings, SettingsError};
 pub use dns::{DnsConfig, MAX_DNS_SERVERS};
 pub use error::ValidationError;
 pub use network::{CommandOutput, CommandRunner, DnsState, ProxyState, SystemError, SystemNetwork};

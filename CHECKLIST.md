@@ -69,6 +69,14 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] 38 tests (parser, settings folder, end-to-end behaviour against an in-memory system + temp dir)
 - [ ] Manual check on a real Windows machine: `hopswitch proxy use v2rayn-socks`, `hopswitch off`
 
+### 🟨 Step 7c — Connectivity test & auto modes (ADR-0009)
+- [x] `ConnectivitySettings` (probe URL / DNS domain / timeout / interval): validated, serde re-validates
+- [x] `Autopilot` decision engine in core: auto connect, auto switch, both; failure streak + minimum-gain hysteresis; 21 tests
+- [ ] `Prober` port + `FakeProber`; real prober: DNS query over UDP, HTTP through HTTP/SOCKS5 proxies (std only)
+- [ ] CLI: `hopswitch ping` (probe every saved profile, print latency) and `hopswitch auto ...` settings
+- [ ] Persist auto settings + pool (ticked profiles) next to `profiles.json`
+- [ ] Background loop in the Tauri shell; UI: latency badges per profile, Settings > Connectivity, Auto connect / Auto switch toggles per panel
+
 ### ⬜ Step 8 — Design system & frontend scaffold
 - [ ] Generate `design-system/MASTER.md` with ui-ux-pro-max (dark-first, desktop utility app)
 - [ ] Run Impeccable critique/audit/harden on the real UI; add `npx impeccable detect` to CI
