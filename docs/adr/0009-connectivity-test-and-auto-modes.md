@@ -38,3 +38,17 @@
   adapter refuses that scheme anyway.
 * A DNS profile is as fast as its fastest live server; all profiles and servers are probed in parallel.
 * Not covered by automated tests: IPv6 DNS servers and real-network behaviour (checked by hand).
+
+## Addendum: auto settings and the runner (implemented)
+
+* Settings live in `auto.json` (`AutoConfig`): per kind `connect`, `switch` and an ordered `pool` of
+  profile ids, plus the connectivity test settings. Thresholds (3 failures, 50 ms / 20 %) use the
+  documented defaults and are not user-facing yet.
+* `AutoRunner::tick` = probe the pool, ask the `Autopilot`, apply through `ProxyService` /
+  `DnsService`. A kind with both options off is not probed at all. Ids in a pool that no longer exist
+  are ignored; deleting a profile through the CLI also removes it from its pool.
+* `hopswitch auto run --once` has no memory between rounds, so it uses a *decisive* runner (one failed
+  probe is enough to give up); the looping `auto run` needs 3 failures in a row. It exits non-zero if a
+  change could not be applied. The loop reopens the services each round (so `hopswitch off` elsewhere
+  is noticed) and prints a problem that persists only once.
+* The Tauri shell will call the same `AutoRunner::tick` on a timer; no decision logic lives in a front end.

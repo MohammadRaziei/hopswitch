@@ -8,7 +8,10 @@ mod error;
 mod unsupported;
 
 pub use app::{run, Context};
-pub use command::{parse, Command, DnsCommand, PingOptions, PingScope, ProxyCommand};
+pub use command::{
+    parse, AutoCommand, AutoOption, AutoTarget, Command, DnsCommand, PingOptions, PingScope,
+    ProxyCommand,
+};
 pub use dirs::{default_dir, Platform};
 pub use error::CliError;
 pub use unsupported::UnsupportedNetwork;

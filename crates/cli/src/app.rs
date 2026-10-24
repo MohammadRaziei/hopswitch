@@ -8,16 +8,21 @@ use std::fmt::Display;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use hopswitch_core::{
     dns_preset, dns_presets, probe_dns_profiles, probe_proxies, proxy_preset, proxy_presets,
-    restore_all, ConnectivitySettings, DnsConfig, DnsProfile, DnsService, DnsState, Health, Kind,
-    NetworkService, Probe, Prober, ProfileRepository, Profiles, ProxyConfig, ProxyProfile,
-    ProxyService, ProxyState, SessionStore, SystemNetwork,
+    restore_all, AutoConfig, AutoConfigStore, AutoKind, AutoRunner, ConnectivitySettings, Decision,
+    DnsConfig, DnsProfile, DnsService, DnsState, Health, Kind, KindReport, NetworkService, Probe,
+    Prober, ProfileRepository, Profiles, ProxyConfig, ProxyProfile, ProxyService, ProxyState,
+    SessionStore, SystemNetwork, TickReport,
 };
-use hopswitch_storage::{JsonFileRepository, JsonFileSessionStore};
+use hopswitch_storage::{JsonFileAutoStore, JsonFileRepository, JsonFileSessionStore};
 
-use crate::command::{parse, Command, DnsCommand, PingOptions, PingScope, ProxyCommand};
+use crate::command::{
+    parse, AutoCommand, AutoOption, AutoTarget, Command, DnsCommand, PingOptions, PingScope,
+    ProxyCommand,
+};
 use crate::CliError;
 
 const USAGE: &str = "\
@@ -38,6 +43,12 @@ usage:
   hopswitch dns remove <name>
   hopswitch ping [proxy|dns] [--url U] [--domain D] [--timeout MS]
                                             test every saved profile and show latency
+  hopswitch auto status                     show the auto settings and pools
+  hopswitch auto proxy|dns connect on|off   connect when something answers, disconnect when not
+  hopswitch auto proxy|dns switch on|off    stay on the fastest profile of the pool
+  hopswitch auto proxy|dns pool add|remove <name>
+  hopswitch auto set [--url U] [--domain D] [--timeout MS] [--interval SECS]
+  hopswitch auto run [--once]               apply the auto settings (Ctrl-C to stop)
   hopswitch off                             restore both proxy and DNS
   hopswitch help                            show this text";
 
@@ -55,6 +66,7 @@ pub struct Context {
 pub fn run(args: &[String], ctx: &Context, out: &mut dyn Write) -> Result<(), CliError> {
     match parse(args)? {
         Command::Help => say(out, USAGE),
+        Command::Auto(AutoCommand::Run { once }) => auto_run(ctx, once, out),
         command => App::open(ctx)?.execute(command, out),
     }
 }
@@ -64,6 +76,8 @@ struct App {
     prober: Arc<dyn Prober>,
     repository: JsonFileRepository,
     profiles_path: PathBuf,
+    auto_store: JsonFileAutoStore,
+    auto_path: PathBuf,
     proxy: ProxyService,
     dns: DnsService,
 }
@@ -71,7 +85,10 @@ struct App {
 impl App {
     fn open(ctx: &Context) -> Result<Self, CliError> {
         let profiles_path = ctx.dir.join("profiles.json");
+        let auto_path = ctx.dir.join("auto.json");
         Ok(Self {
+            auto_store: JsonFileAutoStore::new(&auto_path),
+            auto_path,
             network: ctx.network.clone(),
             prober: ctx.prober.clone(),
             repository: JsonFileRepository::new(&profiles_path),
@@ -87,6 +104,30 @@ impl App {
             .map_err(|e| CliError::failure(format!("{e} (file: {})", self.profiles_path.display())))
     }
 
+    fn auto_config(&self) -> Result<AutoConfig, CliError> {
+        self.auto_store
+            .load()
+            .map_err(|e| CliError::failure(format!("{e} (file: {})", self.auto_path.display())))
+    }
+
+    fn save_auto(&self, config: &AutoConfig) -> Result<(), CliError> {
+        self.auto_store.save(config).map_err(CliError::failure)
+    }
+
+    /// Drops a deleted profile from its pool. A damaged settings file is left alone:
+    /// a stale id in a pool is ignored by the runner anyway.
+    fn prune_pool(&self, target: AutoTarget, id: &str) {
+        if let Ok(mut config) = self.auto_store.load() {
+            let kind = match target {
+                AutoTarget::Proxy => &mut config.proxy,
+                AutoTarget::Dns => &mut config.dns,
+            };
+            if kind.remove_from_pool(id) {
+                let _ = self.auto_store.save(&config);
+            }
+        }
+    }
+
     fn save(&self, profiles: &Profiles) -> Result<(), CliError> {
         self.repository.save(profiles).map_err(CliError::failure)
     }
@@ -98,6 +139,7 @@ impl App {
             Command::Presets => self.presets(out),
             Command::Off => self.off(out),
             Command::Ping(options) => self.ping(&options, out),
+            Command::Auto(command) => self.auto_command(command, out),
             Command::Proxy(command) => self.proxy_command(command, out),
             Command::Dns(command) => self.dns_command(command, out),
         }
@@ -202,6 +244,7 @@ impl App {
         }
         profiles.remove_proxy(&id).map_err(CliError::failure)?;
         self.save(&profiles)?;
+        self.prune_pool(AutoTarget::Proxy, &id);
         say(out, format!("Removed proxy profile `{id}`."))
     }
 
@@ -289,6 +332,7 @@ impl App {
         }
         profiles.remove_dns(&id).map_err(CliError::failure)?;
         self.save(&profiles)?;
+        self.prune_pool(AutoTarget::Dns, &id);
         say(out, format!("Removed DNS profile `{id}`."))
     }
 
@@ -339,7 +383,7 @@ impl App {
     }
 
     fn ping(&self, options: &PingOptions, out: &mut dyn Write) -> Result<(), CliError> {
-        let defaults = ConnectivitySettings::default();
+        let defaults = self.auto_config()?.connectivity;
         let settings = ConnectivitySettings::new(
             options.url.as_deref().unwrap_or(defaults.proxy_target()),
             options.domain.as_deref().unwrap_or(defaults.dns_domain()),
@@ -384,6 +428,181 @@ impl App {
             Ok(())
         } else {
             say(out, "No saved profiles to test. See `hopswitch presets`, then `hopswitch proxy use <preset>`.")
+        }
+    }
+
+    // ---------- auto ----------
+
+    fn auto_command(&self, command: AutoCommand, out: &mut dyn Write) -> Result<(), CliError> {
+        match command {
+            AutoCommand::Status => self.auto_status(out),
+            AutoCommand::Set {
+                url,
+                domain,
+                timeout_ms,
+                interval_secs,
+            } => self.auto_set(
+                url.as_deref(),
+                domain.as_deref(),
+                timeout_ms,
+                interval_secs,
+                out,
+            ),
+            AutoCommand::Toggle { target, option, on } => self.auto_toggle(target, option, on, out),
+            AutoCommand::PoolAdd { target, name } => self.pool_add(target, &name, out),
+            AutoCommand::PoolRemove { target, name } => self.pool_remove(target, &name, out),
+            AutoCommand::Run { .. } => Err(CliError::failure(
+                "`auto run` is started from the command line only",
+            )),
+        }
+    }
+
+    fn auto_status(&self, out: &mut dyn Write) -> Result<(), CliError> {
+        let config = self.auto_config()?;
+        for (label, kind) in [("proxy", &config.proxy), ("dns", &config.dns)] {
+            say(
+                out,
+                format!(
+                    "{label}: connect {}, switch {}",
+                    on_off(kind.connect),
+                    on_off(kind.switch)
+                ),
+            )?;
+            let pool = if kind.pool.is_empty() {
+                "(empty)".to_owned()
+            } else {
+                kind.pool.join(", ")
+            };
+            say(out, format!("  pool: {pool}"))?;
+        }
+        let test = &config.connectivity;
+        say(
+            out,
+            format!(
+                "test: {}, {}, timeout {} ms, every {} s",
+                test.proxy_target(),
+                test.dns_domain(),
+                test.timeout_ms(),
+                test.interval_secs()
+            ),
+        )
+    }
+
+    fn auto_set(
+        &self,
+        url: Option<&str>,
+        domain: Option<&str>,
+        timeout_ms: Option<u32>,
+        interval_secs: Option<u32>,
+        out: &mut dyn Write,
+    ) -> Result<(), CliError> {
+        let mut config = self.auto_config()?;
+        let current = &config.connectivity;
+        config.connectivity = ConnectivitySettings::new(
+            url.unwrap_or(current.proxy_target()),
+            domain.unwrap_or(current.dns_domain()),
+            timeout_ms.unwrap_or(current.timeout_ms()),
+            interval_secs.unwrap_or(current.interval_secs()),
+        )
+        .map_err(CliError::failure)?;
+        self.save_auto(&config)?;
+        say(out, "Test settings saved.")
+    }
+
+    fn auto_toggle(
+        &self,
+        target: AutoTarget,
+        option: AutoOption,
+        on: bool,
+        out: &mut dyn Write,
+    ) -> Result<(), CliError> {
+        let mut config = self.auto_config()?;
+        let kind = kind_mut(&mut config, target);
+        match option {
+            AutoOption::Connect => kind.connect = on,
+            AutoOption::Switch => kind.switch = on,
+        }
+        self.save_auto(&config)?;
+        let what = match option {
+            AutoOption::Connect => "connect",
+            AutoOption::Switch => "switch",
+        };
+        say(
+            out,
+            format!(
+                "Auto {what} for {} is now {}.",
+                target_name(target),
+                on_off(on)
+            ),
+        )
+    }
+
+    fn pool_add(
+        &self,
+        target: AutoTarget,
+        name: &str,
+        out: &mut dyn Write,
+    ) -> Result<(), CliError> {
+        let profiles = self.profiles()?;
+        let id = match target {
+            AutoTarget::Proxy => find_saved(
+                profiles.proxy_profiles().iter().map(|p| (p.id(), p.name())),
+                name,
+            ),
+            AutoTarget::Dns => find_saved(
+                profiles.dns_profiles().iter().map(|p| (p.id(), p.name())),
+                name,
+            ),
+        }
+        .ok_or_else(|| {
+            CliError::failure(format!("no saved {} profile `{name}`", target_name(target)))
+        })?;
+        let mut config = self.auto_config()?;
+        if kind_mut(&mut config, target).add_to_pool(&id) {
+            self.save_auto(&config)?;
+            say(
+                out,
+                format!("Added `{id}` to the {} pool.", target_name(target)),
+            )
+        } else {
+            say(
+                out,
+                format!("`{id}` is already in the {} pool.", target_name(target)),
+            )
+        }
+    }
+
+    fn pool_remove(
+        &self,
+        target: AutoTarget,
+        name: &str,
+        out: &mut dyn Write,
+    ) -> Result<(), CliError> {
+        let profiles = self.profiles()?;
+        // A deleted profile can still be removed by its id.
+        let id = match target {
+            AutoTarget::Proxy => find_saved(
+                profiles.proxy_profiles().iter().map(|p| (p.id(), p.name())),
+                name,
+            ),
+            AutoTarget::Dns => find_saved(
+                profiles.dns_profiles().iter().map(|p| (p.id(), p.name())),
+                name,
+            ),
+        }
+        .unwrap_or_else(|| name.to_owned());
+        let mut config = self.auto_config()?;
+        if kind_mut(&mut config, target).remove_from_pool(&id) {
+            self.save_auto(&config)?;
+            say(
+                out,
+                format!("Removed `{id}` from the {} pool.", target_name(target)),
+            )
+        } else {
+            Err(CliError::failure(format!(
+                "`{name}` is not in the {} pool",
+                target_name(target)
+            )))
         }
     }
 
@@ -568,4 +787,141 @@ fn resolve_dns(profiles: &Profiles, key: &str) -> Result<(DnsProfile, bool), Cli
     }
     let id = unique_id(preset.id(), |id| profiles.dns(id).is_some());
     Ok((preset.to_profile(id).map_err(CliError::failure)?, true))
+}
+
+// ---------- auto run ----------
+
+/// Runs the automatic modes. Services are reopened every round so that a
+/// `hopswitch off` from another terminal is noticed.
+fn auto_run(ctx: &Context, once: bool, out: &mut dyn Write) -> Result<(), CliError> {
+    // One round has no memory of earlier ones, so one failure must be enough.
+    let mut runner = if once {
+        AutoRunner::decisive()
+    } else {
+        AutoRunner::new()
+    };
+    // A problem that persists (say, DNS needing administrator rights) is reported once, not every round.
+    let mut last_lines: Vec<String> = Vec::new();
+    loop {
+        let mut app = App::open(ctx)?;
+        let config = app.auto_config()?;
+        if !config.proxy.is_enabled() && !config.dns.is_enabled() {
+            return say(
+                out,
+                "Auto connect and auto switch are both off for proxy and DNS; nothing to do. \
+                 See `hopswitch auto status`.",
+            );
+        }
+        let profiles = app.profiles()?;
+        let report = runner.tick(
+            &mut app.proxy,
+            &mut app.dns,
+            &*app.prober,
+            &profiles,
+            &config,
+        );
+
+        let events = tick_events(&report, &profiles);
+        if once || events.lines != last_lines {
+            for line in &events.lines {
+                say(out, line)?;
+            }
+        }
+        if once {
+            if events.lines.is_empty() {
+                say(out, "Nothing to change.")?;
+            }
+            return match events.errors {
+                0 => Ok(()),
+                n => Err(CliError::failure(format!("{n} automatic change(s) failed"))),
+            };
+        }
+        out.flush().map_err(CliError::failure)?;
+        last_lines = events.lines;
+        std::thread::sleep(Duration::from_secs(u64::from(
+            config.connectivity.interval_secs(),
+        )));
+    }
+}
+
+struct TickEvents {
+    lines: Vec<String>,
+    errors: usize,
+}
+
+fn tick_events(report: &TickReport, profiles: &Profiles) -> TickEvents {
+    let mut events = TickEvents {
+        lines: Vec::new(),
+        errors: 0,
+    };
+    let proxy_name = |id: &str| {
+        profiles
+            .proxy(id)
+            .map_or_else(|| id.to_owned(), |p| p.name().to_owned())
+    };
+    let dns_name = |id: &str| {
+        profiles
+            .dns(id)
+            .map_or_else(|| id.to_owned(), |p| p.name().to_owned())
+    };
+    kind_events("proxy", &report.proxy, &proxy_name, &mut events);
+    kind_events("dns", &report.dns, &dns_name, &mut events);
+    events
+}
+
+fn kind_events(
+    label: &str,
+    report: &KindReport,
+    name_of: &dyn Fn(&str) -> String,
+    events: &mut TickEvents,
+) {
+    let line =
+        match (&report.decision, &report.error) {
+            (Decision::Keep, _) => return,
+            (Decision::Activate(id), None) => {
+                let latency = report.probes.iter().find(|p| p.id == *id).map_or_else(
+                    String::new,
+                    |p| match p.health {
+                        Health::Alive { latency_ms } => format!(" ({latency_ms} ms)"),
+                        Health::Dead => String::new(),
+                    },
+                );
+                format!("{label}: now using {}{latency}", name_of(id))
+            }
+            (Decision::Activate(id), Some(error)) => {
+                format!("{label}: could not switch to {}: {error}", name_of(id))
+            }
+            (Decision::Deactivate, None) => {
+                format!("{label}: nothing answers; restored the original settings")
+            }
+            (Decision::Deactivate, Some(error)) => {
+                format!("{label}: could not restore the original settings: {error}")
+            }
+        };
+    if report.error.is_some() {
+        events.errors += 1;
+    }
+    events.lines.push(line);
+}
+
+fn kind_mut(config: &mut AutoConfig, target: AutoTarget) -> &mut AutoKind {
+    match target {
+        AutoTarget::Proxy => &mut config.proxy,
+        AutoTarget::Dns => &mut config.dns,
+    }
+}
+
+fn target_name(target: AutoTarget) -> &'static str {
+    match target {
+        AutoTarget::Proxy => "proxy",
+        AutoTarget::Dns => "DNS",
+    }
+}
+
+fn on_off(on: bool) -> &'static str {
+    if on {
+        "on"
+    } else {
+        "off"
+    }
 }

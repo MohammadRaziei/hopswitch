@@ -6,6 +6,8 @@
 pub mod managed_block;
 pub mod testing;
 
+mod auto_config;
+mod auto_runner;
 mod autopilot;
 mod connectivity;
 mod dns;
@@ -20,6 +22,8 @@ mod repository;
 mod service;
 mod session;
 
+pub use auto_config::{AutoConfig, AutoConfigError, AutoConfigStore, AutoKind};
+pub use auto_runner::{AutoRunner, KindReport, TickReport};
 pub use autopilot::{AutoSettings, Autopilot, Decision, Health, Probe};
 pub use connectivity::{ConnectivitySettings, SettingsError};
 pub use dns::{DnsConfig, MAX_DNS_SERVERS};

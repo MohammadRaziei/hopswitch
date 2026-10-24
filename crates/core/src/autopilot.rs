@@ -119,6 +119,11 @@ impl Autopilot {
         }
     }
 
+    /// Applies new settings (the user toggled an option) without forgetting the failure streak.
+    pub fn configure(&mut self, settings: AutoSettings) {
+        self.settings = settings;
+    }
+
     /// Looks at one round of probes (`active` is the profile currently applied by
     /// Hopswitch, if any) and says what to do. A profile outside the pool is the
     /// user's own choice and is never touched.

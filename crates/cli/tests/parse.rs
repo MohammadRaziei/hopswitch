@@ -1,6 +1,9 @@
 //! Tests for command-line parsing.
 
-use hopswitch_cli::{parse, CliError, Command, DnsCommand, PingOptions, PingScope, ProxyCommand};
+use hopswitch_cli::{
+    parse, AutoCommand, AutoOption, AutoTarget, CliError, Command, DnsCommand, PingOptions,
+    PingScope, ProxyCommand,
+};
 
 fn p(args: &[&str]) -> Result<Command, CliError> {
     let owned: Vec<String> = args.iter().map(|s| (*s).to_owned()).collect();
@@ -195,5 +198,110 @@ fn ping_rejects_malformed_input() {
         &["ping", "--color", "red"],
     ] {
         assert!(is_usage(&p(args)), "{args:?}");
+    }
+}
+
+// ---------- auto ----------
+
+fn auto(args: &[&str]) -> Result<AutoCommand, CliError> {
+    let mut full = vec!["auto"];
+    full.extend_from_slice(args);
+    match p(&full)? {
+        Command::Auto(command) => Ok(command),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn auto_status_and_run() {
+    assert_eq!(auto(&["status"]).unwrap(), AutoCommand::Status);
+    assert_eq!(auto(&["run"]).unwrap(), AutoCommand::Run { once: false });
+    assert_eq!(
+        auto(&["run", "--once"]).unwrap(),
+        AutoCommand::Run { once: true }
+    );
+}
+
+#[test]
+fn auto_toggles_name_the_kind_the_option_and_the_state() {
+    assert_eq!(
+        auto(&["proxy", "connect", "on"]).unwrap(),
+        AutoCommand::Toggle {
+            target: AutoTarget::Proxy,
+            option: AutoOption::Connect,
+            on: true
+        }
+    );
+    assert_eq!(
+        auto(&["dns", "switch", "off"]).unwrap(),
+        AutoCommand::Toggle {
+            target: AutoTarget::Dns,
+            option: AutoOption::Switch,
+            on: false
+        }
+    );
+}
+
+#[test]
+fn auto_pool_add_and_remove() {
+    assert_eq!(
+        auto(&["proxy", "pool", "add", "Work"]).unwrap(),
+        AutoCommand::PoolAdd {
+            target: AutoTarget::Proxy,
+            name: "Work".into()
+        }
+    );
+    assert_eq!(
+        auto(&["dns", "pool", "remove", "cf"]).unwrap(),
+        AutoCommand::PoolRemove {
+            target: AutoTarget::Dns,
+            name: "cf".into()
+        }
+    );
+}
+
+#[test]
+fn auto_set_takes_any_mix_of_options() {
+    assert_eq!(
+        auto(&[
+            "set",
+            "--interval",
+            "10",
+            "--url",
+            "http://x.test/",
+            "--domain",
+            "x.test",
+            "--timeout",
+            "900"
+        ])
+        .unwrap(),
+        AutoCommand::Set {
+            url: Some("http://x.test/".into()),
+            domain: Some("x.test".into()),
+            timeout_ms: Some(900),
+            interval_secs: Some(10),
+        }
+    );
+}
+
+#[test]
+fn auto_rejects_malformed_input() {
+    for args in [
+        &[][..],
+        &["status", "now"],
+        &["run", "--twice"],
+        &["set"],
+        &["set", "--timeout", "soon"],
+        &["set", "--interval"],
+        &["proxy"],
+        &["proxy", "connect"],
+        &["proxy", "connect", "maybe"],
+        &["proxy", "speed", "on"],
+        &["proxy", "pool"],
+        &["proxy", "pool", "add"],
+        &["proxy", "pool", "list", "x"],
+        &["tor", "connect", "on"],
+    ] {
+        assert!(is_usage(&p(&[&["auto"][..], args].concat())), "{args:?}");
     }
 }

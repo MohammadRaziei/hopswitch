@@ -197,3 +197,14 @@ fn settings_reject_nonsense() {
     let mut p = Autopilot::new(custom);
     assert_eq!(p.observe(Some("a"), &[dead("a")]), Decision::Deactivate);
 }
+
+#[test]
+fn reconfiguring_keeps_the_failure_streak() {
+    let mut p = pilot(true, false);
+    p.observe(Some("a"), &[dead("a")]);
+    p.observe(Some("a"), &[dead("a")]);
+
+    p.configure(AutoSettings::new(true, true));
+
+    assert_eq!(p.observe(Some("a"), &[dead("a")]), Decision::Deactivate);
+}

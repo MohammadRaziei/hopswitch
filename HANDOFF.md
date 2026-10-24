@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-24, Steps 7b + 7c part 1 done; next: persist auto settings, `auto` CLI, Tauri loop + UI)
+# HANDOFF — Hopswitch (state at 2026-10-24, Steps 7b + 7c done except the Tauri loop + UI; 304 tests green)
 
 > **Paste-in starter for the new chat (the user writes Persian, informal):**
 > «سلام! پروژه‌ی Hopswitch رو از چت قبلی ادامه می‌دیم. zip پروژه و HANDOFF.md پیوست شده.
