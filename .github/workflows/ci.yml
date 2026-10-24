@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: fmt + clippy + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --no-fail-fast
+
+  # A real-machine check of the Windows proxy adapter (CHECKLIST Step 4): the runner is a
+  # throwaway Windows VM, so changing its proxy settings is safe. It applies a preset
+  # through the CLI, reads the registry, restores, and checks the original is back.
+  windows-proxy-smoke:
+    name: Windows proxy adapter (real registry)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p hopswitch-cli
+      - name: apply, verify, restore
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $hs = Join-Path $PWD 'target\debug\hopswitch.exe'
+          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+          function Hs { & $hs @args; if ($LASTEXITCODE -ne 0) { throw "hopswitch $args failed ($LASTEXITCODE)" } }
+          function Show-Proxy { Get-ItemProperty $key | Select-Object ProxyEnable, ProxyServer, ProxyOverride | Format-List | Out-String }
+
+          $before = Get-ItemProperty $key
+          "before:`n$(Show-Proxy)"
+
+          Hs status
+          Hs proxy use v2rayn-socks
+          $during = Get-ItemProperty $key
+          "during:`n$(Show-Proxy)"
+          if ($during.ProxyEnable -ne 1) { throw 'proxy was not enabled' }
+          if ($during.ProxyServer -notmatch '10808') { throw "unexpected ProxyServer: $($during.ProxyServer)" }
+
+          Hs status
+          Hs off
+          $after = Get-ItemProperty $key
+          "after:`n$(Show-Proxy)"
+          if ($after.ProxyEnable -ne $before.ProxyEnable) { throw 'ProxyEnable was not restored' }
+          if ($after.ProxyServer -ne $before.ProxyServer) { throw 'ProxyServer was not restored' }

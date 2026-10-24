@@ -69,6 +69,10 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] 38 tests (parser, settings folder, end-to-end behaviour against an in-memory system + temp dir)
 - [ ] Manual check on a real Windows machine: `hopswitch proxy use v2rayn-socks`, `hopswitch off`
 
+### ✅ CI
+- [x] `.github/workflows/ci.yml`: fmt + clippy + tests on Linux / Windows / macOS, and `windows-proxy-smoke` (applies a preset through the CLI on a real Windows runner, reads the registry, restores)
+- [ ] First green run on GitHub (not run yet; fix the workflow if it fails)
+
 ### 🟨 Step 7c — Connectivity test & auto modes (ADR-0009)
 - [x] `ConnectivitySettings` (probe URL / DNS domain / timeout / interval): validated, serde re-validates
 - [x] `Autopilot` decision engine in core: auto connect, auto switch, both; failure streak + minimum-gain hysteresis; 21 tests

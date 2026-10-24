@@ -8,7 +8,35 @@ from a clean desktop UI or straight from the system tray. Windows · macOS · Li
 
 ## Status
 
-Early development, see [`CHECKLIST.md`](CHECKLIST.md). Steps 1 (domain model), 2 (system port + proxy/DNS services) 3 (persistence) and 3b (presets) are complete; Step 4 (Windows proxy adapter) is implemented and awaits a real-machine check. New to the project? Start with [`HANDOFF.md`](HANDOFF.md).
+Early development; see [`CHECKLIST.md`](CHECKLIST.md) for the full plan and [`HANDOFF.md`](HANDOFF.md) to get started.
+
+| Part | State |
+| --- | --- |
+| Domain model, proxy/DNS services, presets, persistence | done |
+| Windows proxy adapter | done, verified on a real runner by CI (`windows-proxy-smoke`) |
+| Command line (`hopswitch`) | done |
+| Connectivity test (`hopswitch ping`) and auto connect / auto switch (`hopswitch auto`) | done |
+| Windows DNS adapter (needs administrator rights) | planned |
+| macOS and Linux adapters | planned |
+| Desktop UI and tray (Tauri) | planned |
+
+## Command line
+
+```
+hopswitch presets                        # built-in proxy and DNS presets
+hopswitch proxy use v2rayn-socks         # apply a preset or a saved profile
+hopswitch dns use cloudflare
+hopswitch status                         # what is active right now
+hopswitch ping                           # test every saved profile and show latency
+hopswitch off                            # restore the original proxy and DNS
+
+hopswitch auto proxy pool add work       # take part in auto mode
+hopswitch auto proxy connect on          # connect when something answers, disconnect when not
+hopswitch auto proxy switch on           # stay on the fastest profile of the pool
+hopswitch auto run                       # apply the auto settings (Ctrl-C to stop)
+```
+
+`ping` is a real test, not ICMP: an HTTP request through each proxy and a DNS query to each server.
 
 ## Development
 
