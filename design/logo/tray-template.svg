@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44" width="44" height="44">
+  <title>Hopswitch tray (monochrome template)</title>
+  <!-- black + transparency only: macOS template image; on Windows/Linux recolour as needed -->
+  <path d="M11 22 C10 9 27 6 31 16" fill="none" stroke="#000" stroke-width="4.4" stroke-linecap="round"/>
+  <path d="M36.4 13 L25.6 17.2 L33.8 22.6 Z" fill="#000" stroke="#000" stroke-width="1.6" stroke-linejoin="round"/>
+  <path fill="#000" fill-rule="evenodd" d="M10 26 H34 A7 7 0 0 1 34 40 H10 A7 7 0 0 1 10 26 Z M34 28.5 A4.5 4.5 0 1 0 34 37.5 A4.5 4.5 0 1 0 34 28.5 Z"/>
+</svg>

@@ -44,7 +44,7 @@ impl<S: Clone> Channel<S> {
             }
             return Err(error);
         }
-        self.state = state.clone();
+        state.clone_into(&mut self.state);
         Ok(())
     }
 }

@@ -33,7 +33,7 @@ impl<S> Session<S> {
     }
 
     pub(crate) fn set_active_id(&mut self, id: &str) {
-        self.active_id = id.to_owned();
+        id.clone_into(&mut self.active_id);
     }
 }
 

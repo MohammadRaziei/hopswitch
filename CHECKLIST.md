@@ -69,9 +69,17 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] 38 tests (parser, settings folder, end-to-end behaviour against an in-memory system + temp dir)
 - [ ] Manual check on a real Windows machine: `hopswitch proxy use v2rayn-socks`, `hopswitch off`
 
+### 🟨 Step 4b — Windows restore fidelity (found by the CI smoke job)
+- [ ] After `apply` + `off` the proxy is off again, but `ProxyServer` keeps the text Hopswitch wrote (`socks=127.0.0.1:10808`) when the original had none, and a user's own leftover server text (proxy switched off, address still stored) is also replaced. Cause: `ProxyState::Disabled` carries no payload, and `plan_write(Disabled)` only writes `ProxyEnable=0` (deliberate: a failed apply must not delete a leftover). Harmless in effect (nothing is proxied), but not an exact restore. Needs an ADR: let the snapshot keep the raw registry values (e.g. `Disabled` with the leftover text) and restore them exactly.
+
+### ✅ Logo (`design/logo`)
+- [x] App icon, small-size variant (16-32 px), monochrome tray mark, light/dark lockups, Tauri-named PNG/ICO exports, GitHub social preview; reproducible with `design/logo/build.py`
+- [ ] Upload `export/social-preview.png` in the GitHub repo settings; copy the icons into `src-tauri/icons` when the Tauri shell exists
+
 ### ✅ CI
 - [x] `.github/workflows/ci.yml`: fmt + clippy + tests on Linux / Windows / macOS, and `windows-proxy-smoke` (applies a preset through the CLI on a real Windows runner, reads the registry, restores)
-- [ ] First green run on GitHub (not run yet; fix the workflow if it fails)
+- [x] First run on GitHub: the Windows smoke job proved the adapter on a real runner (apply wrote `ProxyEnable=1`, `ProxyServer=socks=127.0.0.1:10808`; `off` switched it off). Clippy failed on a lint newer than the local toolchain (`assigning_clones`): fixed; lint now runs in its own job so it cannot hide test results
+- [ ] Second run: confirm `lint`, `test` (3 OS) and `windows-proxy-smoke` are all green
 
 ### 🟨 Step 7c — Connectivity test & auto modes (ADR-0009)
 - [x] `ConnectivitySettings` (probe URL / DNS domain / timeout / interval): validated, serde re-validates

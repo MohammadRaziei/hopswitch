@@ -1,4 +1,9 @@
-# Hopswitch
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="design/logo/logo-dark.svg">
+    <img alt="Hopswitch" src="design/logo/logo-light.svg" height="72">
+  </picture>
+</p>
 
 Switch your **system proxy** and **DNS** between saved profiles with one click —
 from a clean desktop UI or straight from the system tray. Windows · macOS · Linux.
