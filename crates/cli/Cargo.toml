@@ -17,6 +17,7 @@ path = "src/main.rs"
 hopswitch-core = { path = "../core" }
 hopswitch-storage = { path = "../storage" }
 hopswitch-platform-windows = { path = "../platform-windows" }
+hopswitch-probe = { path = "../probe" }
 
 [dev-dependencies]
 tempfile = "=3.10.1"

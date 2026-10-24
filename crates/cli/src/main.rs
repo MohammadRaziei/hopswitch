@@ -6,6 +6,7 @@ use std::sync::Arc;
 use hopswitch_cli::{default_dir, run, Context, Platform, UnsupportedNetwork};
 use hopswitch_core::SystemNetwork;
 use hopswitch_platform_windows::WindowsNetwork;
+use hopswitch_probe::NetProber;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -22,7 +23,11 @@ fn main() -> ExitCode {
 
     match run(
         &args,
-        &Context { dir, network },
+        &Context {
+            dir,
+            network,
+            prober: Arc::new(NetProber::new()),
+        },
         &mut std::io::stdout().lock(),
     ) {
         Ok(()) => ExitCode::SUCCESS,

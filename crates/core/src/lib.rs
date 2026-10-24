@@ -12,6 +12,7 @@ mod dns;
 mod error;
 mod network;
 mod presets;
+mod prober;
 mod profile;
 mod profiles;
 mod proxy;
@@ -27,6 +28,7 @@ pub use network::{CommandOutput, CommandRunner, DnsState, ProxyState, SystemErro
 pub use presets::{
     dns_preset, dns_presets, proxy_preset, proxy_presets, DnsPreset, DnsPresetGroup, ProxyPreset,
 };
+pub use prober::{probe_dns_profiles, probe_proxies, Prober};
 pub use profile::{DnsProfile, ProxyProfile, MAX_NAME_CHARS};
 pub use profiles::{Profiles, ProfilesError};
 pub use proxy::{ProxyConfig, ProxyScheme};

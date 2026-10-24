@@ -325,3 +325,78 @@ impl CommandRunner for FakeRunner {
         })
     }
 }
+
+pub use prober_fake::FakeProber;
+
+mod prober_fake {
+    use std::collections::HashMap;
+    use std::net::IpAddr;
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    use crate::{Health, Prober, ProxyConfig};
+
+    /// A [`Prober`] with scripted answers; anything not scripted is `Dead`.
+    ///
+    /// Proxies are keyed by their `scheme://host:port` text, DNS servers by address.
+    #[derive(Debug, Default)]
+    pub struct FakeProber {
+        proxies: HashMap<String, Health>,
+        dns: HashMap<IpAddr, Health>,
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl FakeProber {
+        /// A prober for which everything is dead.
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        /// Scripts the answer for the proxy `url` (`scheme://host:port`).
+        #[must_use]
+        pub fn with_proxy(mut self, url: &str, health: Health) -> Self {
+            self.proxies.insert(url.to_owned(), health);
+            self
+        }
+
+        /// Scripts the answer for the DNS server `ip`.
+        ///
+        /// # Panics
+        /// If `ip` is not an IP address (a bug in the test).
+        #[must_use]
+        pub fn with_dns(mut self, ip: &str, health: Health) -> Self {
+            self.dns
+                .insert(ip.parse().expect("test IP address"), health);
+            self
+        }
+
+        /// Every probe made so far, as text (`proxy <url> <target> <ms>ms`, `dns <ip> <domain> <ms>ms`).
+        pub fn calls(&self) -> Vec<String> {
+            self.calls
+                .lock()
+                .map(|calls| calls.clone())
+                .unwrap_or_default()
+        }
+
+        fn record(&self, call: String) {
+            if let Ok(mut calls) = self.calls.lock() {
+                calls.push(call);
+            }
+        }
+    }
+
+    impl Prober for FakeProber {
+        fn probe_proxy(&self, config: &ProxyConfig, target: &str, timeout: Duration) -> Health {
+            self.record(format!("proxy {config} {target} {}ms", timeout.as_millis()));
+            self.proxies
+                .get(&config.to_string())
+                .copied()
+                .unwrap_or(Health::Dead)
+        }
+
+        fn probe_dns(&self, server: IpAddr, domain: &str, timeout: Duration) -> Health {
+            self.record(format!("dns {server} {domain} {}ms", timeout.as_millis()));
+            self.dns.get(&server).copied().unwrap_or(Health::Dead)
+        }
+    }
+}

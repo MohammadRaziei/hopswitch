@@ -72,8 +72,10 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 ### 🟨 Step 7c — Connectivity test & auto modes (ADR-0009)
 - [x] `ConnectivitySettings` (probe URL / DNS domain / timeout / interval): validated, serde re-validates
 - [x] `Autopilot` decision engine in core: auto connect, auto switch, both; failure streak + minimum-gain hysteresis; 21 tests
-- [ ] `Prober` port + `FakeProber`; real prober: DNS query over UDP, HTTP through HTTP/SOCKS5 proxies (std only)
-- [ ] CLI: `hopswitch ping` (probe every saved profile, print latency) and `hopswitch auto ...` settings
+- [x] `Prober` port + `FakeProber` + parallel `probe_proxies` / `probe_dns_profiles` in core (5 tests)
+- [x] `crates/probe` (`NetProber`, std only): DNS `A` query over UDP; HTTP through HTTP / SOCKS4a / SOCKS5 proxies; `https://` targets test the tunnel; 22 tests against loopback fake servers
+- [x] CLI: `hopswitch ping [proxy|dns] [--url U] [--domain D] [--timeout MS]` (read-only, marks the active profile)
+- [ ] CLI: `hopswitch auto ...` settings
 - [ ] Persist auto settings + pool (ticked profiles) next to `profiles.json`
 - [ ] Background loop in the Tauri shell; UI: latency badges per profile, Settings > Connectivity, Auto connect / Auto switch toggles per panel
 

@@ -5,12 +5,15 @@ use std::fs;
 use std::sync::Arc;
 
 use hopswitch_cli::{run, CliError, Context, UnsupportedNetwork};
-use hopswitch_core::testing::InMemoryNetwork;
-use hopswitch_core::{DnsState, ProxyConfig, ProxyScheme, ProxyState, SystemError, SystemNetwork};
+use hopswitch_core::testing::{FakeProber, InMemoryNetwork};
+use hopswitch_core::{
+    DnsState, Health, ProxyConfig, ProxyScheme, ProxyState, SystemError, SystemNetwork,
+};
 
 struct Env {
     dir: tempfile::TempDir,
     net: Arc<InMemoryNetwork>,
+    prober: Arc<FakeProber>,
 }
 
 fn users_proxy() -> ProxyState {
@@ -18,9 +21,14 @@ fn users_proxy() -> ProxyState {
 }
 
 fn env() -> Env {
+    env_with(FakeProber::new())
+}
+
+fn env_with(prober: FakeProber) -> Env {
     Env {
         dir: tempfile::tempdir().unwrap(),
         net: Arc::new(InMemoryNetwork::new().with_proxy(users_proxy())),
+        prober: Arc::new(prober),
     }
 }
 
@@ -29,6 +37,7 @@ impl Env {
         Context {
             dir: self.dir.path().join("hopswitch"),
             network: self.net.clone(),
+            prober: self.prober.clone(),
         }
     }
 
@@ -411,6 +420,7 @@ fn a_system_without_an_adapter_explains_itself() {
     let ctx = Context {
         dir: dir.path().to_path_buf(),
         network: Arc::new(UnsupportedNetwork),
+        prober: Arc::new(FakeProber::new()),
     };
     let mut out = Vec::new();
 
@@ -426,4 +436,156 @@ fn a_system_without_an_adapter_explains_itself() {
         }
         other => panic!("{other:?}"),
     }
+}
+
+// ---------- ping ----------
+
+fn alive(ms: u32) -> Health {
+    Health::Alive { latency_ms: ms }
+}
+
+/// The line of `out` that mentions `needle`.
+fn line_with<'a>(out: &'a str, needle: &str) -> &'a str {
+    out.lines()
+        .find(|l| l.contains(needle))
+        .unwrap_or_else(|| panic!("no line with {needle:?} in:\n{out}"))
+}
+
+fn saved_pair() -> Env {
+    let e = env_with(
+        FakeProber::new()
+            .with_proxy("socks5://127.0.0.1:1080", alive(42))
+            .with_dns("1.1.1.1", alive(18)),
+    );
+    e.ok(&["proxy", "add", "Fast", "socks5://127.0.0.1:1080"]);
+    e.ok(&["proxy", "add", "Down", "http://127.0.0.1:8080"]);
+    e.ok(&["dns", "add", "Cf", "1.1.1.1"]);
+    e
+}
+
+#[test]
+fn ping_shows_latency_or_unreachable_for_every_saved_profile() {
+    let e = saved_pair();
+
+    let out = e.ok(&["ping"]);
+
+    assert!(line_with(&out, "fast").contains("42 ms"), "{out}");
+    assert!(line_with(&out, "down").contains("unreachable"), "{out}");
+    assert!(line_with(&out, "cf").contains("18 ms"), "{out}");
+}
+
+#[test]
+fn ping_marks_the_active_profile() {
+    let e = saved_pair();
+    e.ok(&["proxy", "use", "fast"]);
+
+    let out = e.ok(&["ping"]);
+
+    assert!(line_with(&out, "fast").starts_with('*'), "{out}");
+    assert!(line_with(&out, "down").starts_with(' '), "{out}");
+}
+
+#[test]
+fn ping_can_be_limited_to_proxies_or_dns() {
+    let e = saved_pair();
+
+    e.ok(&["ping", "proxy"]);
+    assert!(e.prober.calls().iter().all(|c| c.starts_with("proxy ")));
+
+    let e = saved_pair();
+    e.ok(&["ping", "dns"]);
+    assert!(e.prober.calls().iter().all(|c| c.starts_with("dns ")));
+}
+
+#[test]
+fn ping_options_choose_the_target_domain_and_timeout() {
+    let e = saved_pair();
+
+    e.ok(&[
+        "ping",
+        "--url",
+        "https://probe.test/up",
+        "--domain",
+        "probe.test",
+        "--timeout",
+        "1500",
+    ]);
+
+    let calls = e.prober.calls();
+    assert!(
+        calls.iter().any(|c| c.contains("proxy")
+            && c.contains("https://probe.test/up")
+            && c.contains("1500ms")),
+        "{calls:?}"
+    );
+    assert!(
+        calls
+            .iter()
+            .any(|c| c.contains("dns") && c.contains("probe.test") && c.contains("1500ms")),
+        "{calls:?}"
+    );
+}
+
+#[test]
+fn ping_by_default_uses_the_documented_test_targets() {
+    let e = saved_pair();
+
+    e.ok(&["ping"]);
+
+    let calls = e.prober.calls();
+    assert!(
+        calls
+            .iter()
+            .any(|c| c.contains("http://cp.cloudflare.com/generate_204") && c.contains("3000ms")),
+        "{calls:?}"
+    );
+    assert!(calls.iter().any(|c| c.contains("example.com")), "{calls:?}");
+}
+
+#[test]
+fn ping_rejects_bad_settings_before_testing_anything() {
+    let e = saved_pair();
+
+    for args in [
+        ["ping", "--timeout", "100"],
+        ["ping", "--url", "not-a-url"],
+        ["ping", "--domain", "bad domain"],
+    ] {
+        e.fails(&args);
+    }
+    assert!(e.prober.calls().is_empty());
+}
+
+#[test]
+fn ping_with_nothing_saved_points_to_the_presets() {
+    let e = env();
+
+    let out = e.ok(&["ping"]);
+
+    assert!(out.contains("presets"), "{out}");
+    assert!(e.prober.calls().is_empty());
+}
+
+#[test]
+fn ping_changes_nothing_on_the_system_or_on_disk() {
+    let e = saved_pair();
+    let before = fs::read(e.file("profiles.json")).unwrap();
+    let writes = (e.net.proxy_write_count(), e.net.dns_write_count());
+
+    e.ok(&["ping"]);
+
+    assert_eq!(fs::read(e.file("profiles.json")).unwrap(), before);
+    assert_eq!((e.net.proxy_write_count(), e.net.dns_write_count()), writes);
+    assert!(!e.file("session-proxy.json").exists());
+}
+
+#[test]
+fn ping_reports_a_damaged_profiles_file() {
+    let e = env();
+    fs::create_dir_all(e.dir.path().join("hopswitch")).unwrap();
+    fs::write(e.file("profiles.json"), b"{ broken").unwrap();
+
+    let message = e.fails(&["ping"]);
+
+    assert!(message.contains("corrupt"), "{message}");
 }

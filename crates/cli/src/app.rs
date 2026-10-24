@@ -10,13 +10,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use hopswitch_core::{
-    dns_preset, dns_presets, proxy_preset, proxy_presets, restore_all, DnsConfig, DnsProfile,
-    DnsService, DnsState, Kind, NetworkService, ProfileRepository, Profiles, ProxyConfig,
-    ProxyProfile, ProxyService, ProxyState, SessionStore, SystemNetwork,
+    dns_preset, dns_presets, probe_dns_profiles, probe_proxies, proxy_preset, proxy_presets,
+    restore_all, ConnectivitySettings, DnsConfig, DnsProfile, DnsService, DnsState, Health, Kind,
+    NetworkService, Probe, Prober, ProfileRepository, Profiles, ProxyConfig, ProxyProfile,
+    ProxyService, ProxyState, SessionStore, SystemNetwork,
 };
 use hopswitch_storage::{JsonFileRepository, JsonFileSessionStore};
 
-use crate::command::{parse, Command, DnsCommand, ProxyCommand};
+use crate::command::{parse, Command, DnsCommand, PingOptions, PingScope, ProxyCommand};
 use crate::CliError;
 
 const USAGE: &str = "\
@@ -35,6 +36,8 @@ usage:
   hopswitch dns list                        list saved DNS profiles
   hopswitch dns add <name> <ip[,ip...]>
   hopswitch dns remove <name>
+  hopswitch ping [proxy|dns] [--url U] [--domain D] [--timeout MS]
+                                            test every saved profile and show latency
   hopswitch off                             restore both proxy and DNS
   hopswitch help                            show this text";
 
@@ -44,6 +47,8 @@ pub struct Context {
     pub dir: PathBuf,
     /// The system whose proxy and DNS are switched.
     pub network: Arc<dyn SystemNetwork>,
+    /// What measures whether a proxy or DNS server answers (`ping`).
+    pub prober: Arc<dyn Prober>,
 }
 
 /// Runs one command line and prints the result to `out`.
@@ -56,6 +61,7 @@ pub fn run(args: &[String], ctx: &Context, out: &mut dyn Write) -> Result<(), Cl
 
 struct App {
     network: Arc<dyn SystemNetwork>,
+    prober: Arc<dyn Prober>,
     repository: JsonFileRepository,
     profiles_path: PathBuf,
     proxy: ProxyService,
@@ -67,6 +73,7 @@ impl App {
         let profiles_path = ctx.dir.join("profiles.json");
         Ok(Self {
             network: ctx.network.clone(),
+            prober: ctx.prober.clone(),
             repository: JsonFileRepository::new(&profiles_path),
             profiles_path,
             proxy: open_service(ctx, "session-proxy.json")?,
@@ -90,6 +97,7 @@ impl App {
             Command::Status => self.status(out),
             Command::Presets => self.presets(out),
             Command::Off => self.off(out),
+            Command::Ping(options) => self.ping(&options, out),
             Command::Proxy(command) => self.proxy_command(command, out),
             Command::Dns(command) => self.dns_command(command, out),
         }
@@ -330,6 +338,55 @@ impl App {
         say(out, format!("dns: {dns}"))
     }
 
+    fn ping(&self, options: &PingOptions, out: &mut dyn Write) -> Result<(), CliError> {
+        let defaults = ConnectivitySettings::default();
+        let settings = ConnectivitySettings::new(
+            options.url.as_deref().unwrap_or(defaults.proxy_target()),
+            options.domain.as_deref().unwrap_or(defaults.dns_domain()),
+            options.timeout_ms.unwrap_or(defaults.timeout_ms()),
+            defaults.interval_secs(),
+        )
+        .map_err(CliError::failure)?;
+        let profiles = self.profiles()?;
+        let mut printed = false;
+
+        let proxies = profiles.proxy_profiles();
+        if options.scope != PingScope::Dns && !proxies.is_empty() {
+            say(out, format!("proxy (test: {}):", settings.proxy_target()))?;
+            let probes = probe_proxies(&*self.prober, proxies, &settings);
+            for (profile, probe) in proxies.iter().zip(&probes) {
+                let active = self.proxy.active_id() == Some(profile.id());
+                let target = profile.config().to_string();
+                say(
+                    out,
+                    ping_line(active, profile.id(), profile.name(), &target, probe),
+                )?;
+            }
+            printed = true;
+        }
+
+        let dns = profiles.dns_profiles();
+        if options.scope != PingScope::Proxy && !dns.is_empty() {
+            say(out, format!("dns (test: {}):", settings.dns_domain()))?;
+            let probes = probe_dns_profiles(&*self.prober, dns, &settings);
+            for (profile, probe) in dns.iter().zip(&probes) {
+                let active = self.dns.active_id() == Some(profile.id());
+                let target = servers_text(profile.config());
+                say(
+                    out,
+                    ping_line(active, profile.id(), profile.name(), &target, probe),
+                )?;
+            }
+            printed = true;
+        }
+
+        if printed {
+            Ok(())
+        } else {
+            say(out, "No saved profiles to test. See `hopswitch presets`, then `hopswitch proxy use <preset>`.")
+        }
+    }
+
     fn presets(&self, out: &mut dyn Write) -> Result<(), CliError> {
         let profiles = self.profiles().unwrap_or_default();
 
@@ -387,6 +444,14 @@ where
 
 fn say(out: &mut dyn Write, text: impl Display) -> Result<(), CliError> {
     writeln!(out, "{text}").map_err(CliError::failure)
+}
+
+fn ping_line(active: bool, id: &str, name: &str, target: &str, probe: &Probe) -> String {
+    let result = match probe.health {
+        Health::Alive { latency_ms } => format!("{latency_ms} ms"),
+        Health::Dead => "unreachable".to_owned(),
+    };
+    format!("{} {id}  {name}  {target}  {result}", marker(active))
 }
 
 fn marker(active: bool) -> char {

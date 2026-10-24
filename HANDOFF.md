@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-24, Step 7b CLI done; next: real-machine check, then Step 5/6/7)
+# HANDOFF — Hopswitch (state at 2026-10-24, Steps 7b + 7c part 1 done; next: persist auto settings, `auto` CLI, Tauri loop + UI)
 
 > **Paste-in starter for the new chat (the user writes Persian, informal):**
 > «سلام! پروژه‌ی Hopswitch رو از چت قبلی ادامه می‌دیم. zip پروژه و HANDOFF.md پیوست شده.
@@ -76,7 +76,7 @@ Architecture rules (AGENT.md): dependencies point inward (`src-tauri → platfor
 ## 5. NEXT: CLI is finished (Step 7b)
 
 `crates/cli` is a workspace member again; `app.rs` is written and all 203 tests pass (core 104, storage 30,
-platform-windows 31, cli 38); fmt + clippy (`-D warnings`) clean.
+platform-windows 31, cli 38 -> now 264 in total incl. probe 22; see Step 7c); fmt + clippy (`-D warnings`) clean.
 Behaviour notes: DNS `Automatic` shows as `automatic (from the network)` in `status`; `off` with nothing active is a no-op without writes.
 
 **In this order of value:**

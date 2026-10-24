@@ -13,10 +13,36 @@ pub enum Command {
     Presets,
     /// Restore proxy and DNS to the original settings.
     Off,
+    /// Test whether the saved profiles work, and how fast.
+    Ping(PingOptions),
     /// A proxy subcommand.
     Proxy(ProxyCommand),
     /// A DNS subcommand.
     Dns(DnsCommand),
+}
+
+/// Which saved profiles `ping` tests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PingScope {
+    /// Proxies and DNS.
+    All,
+    /// Only proxies.
+    Proxy,
+    /// Only DNS.
+    Dns,
+}
+
+/// `hopswitch ping [proxy|dns] [--url U] [--domain D] [--timeout MS]`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PingOptions {
+    /// What to test.
+    pub scope: PingScope,
+    /// Overrides the URL fetched through each proxy.
+    pub url: Option<String>,
+    /// Overrides the domain asked of each DNS server.
+    pub domain: Option<String>,
+    /// Overrides the per-probe timeout, in milliseconds.
+    pub timeout_ms: Option<u32>,
 }
 
 /// `hopswitch proxy ...`
@@ -71,6 +97,7 @@ pub fn parse(args: &[String]) -> Result<Command, CliError> {
         "status" => no_args(rest, Command::Status),
         "presets" => no_args(rest, Command::Presets),
         "off" => no_args(rest, Command::Off),
+        "ping" => parse_ping(rest).map(Command::Ping),
         "proxy" => parse_proxy(rest).map(Command::Proxy),
         "dns" => parse_dns(rest).map(Command::Dns),
         other => Err(CliError::usage(format!(
@@ -161,4 +188,57 @@ fn parse_dns(rest: &[String]) -> Result<DnsCommand, CliError> {
         }
         other => Err(CliError::usage(format!("unknown dns command `{other}`"))),
     }
+}
+
+fn parse_ping(args: &[String]) -> Result<PingOptions, CliError> {
+    let mut options = PingOptions {
+        scope: PingScope::All,
+        url: None,
+        domain: None,
+        timeout_ms: None,
+    };
+    let mut scope_given = false;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--url" => options.url = Some(option_value(&mut iter, "--url")?),
+            "--domain" => options.domain = Some(option_value(&mut iter, "--domain")?),
+            "--timeout" => {
+                let value = option_value(&mut iter, "--timeout")?;
+                options.timeout_ms = Some(value.parse().map_err(|_| {
+                    CliError::usage(format!(
+                        "--timeout needs a number of milliseconds, got `{value}`"
+                    ))
+                })?);
+            }
+            flag if flag.starts_with("--") => {
+                return Err(CliError::usage(format!("unknown option `{flag}`")));
+            }
+            word => {
+                if scope_given {
+                    return Err(CliError::usage(format!("unexpected argument `{word}`")));
+                }
+                scope_given = true;
+                options.scope = match word {
+                    "proxy" => PingScope::Proxy,
+                    "dns" => PingScope::Dns,
+                    other => {
+                        return Err(CliError::usage(format!(
+                            "ping what? expected `proxy` or `dns`, got `{other}`"
+                        )))
+                    }
+                };
+            }
+        }
+    }
+    Ok(options)
+}
+
+fn option_value<'a>(
+    iter: &mut impl Iterator<Item = &'a String>,
+    flag: &str,
+) -> Result<String, CliError> {
+    iter.next()
+        .cloned()
+        .ok_or_else(|| CliError::usage(format!("{flag} needs a value")))
 }

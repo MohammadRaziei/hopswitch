@@ -26,3 +26,15 @@
      next to the tray) apply the decisions through the existing `ProxyService` / `DnsService`.
 * **Consequences:** auto DNS on Windows waits for the elevated helper (Step 10); auto proxy works as
   soon as the real prober exists. The probe interval costs a little traffic, so auto modes are off by default.
+
+## Addendum: the real prober (implemented)
+
+* `hopswitch-probe::NetProber` uses only `std`. DNS: one `A` query over UDP, accepted only if the id
+  matches, the response code is 0 and there is at least one record; stray packets are ignored until
+  the deadline. Proxy: HTTP proxies get an absolute-form `GET` (or `CONNECT` for `https://` targets);
+  SOCKS5 sends the hostname so the proxy resolves it; SOCKS4 uses the 4a extension. Status 200-399 is alive.
+* One deadline covers connect + handshake + response, so the timeout is the worst case per probe.
+* A proxy reached over TLS (`https://` proxy scheme) is reported dead: not supported, and the Windows
+  adapter refuses that scheme anyway.
+* A DNS profile is as fast as its fastest live server; all profiles and servers are probed in parallel.
+* Not covered by automated tests: IPv6 DNS servers and real-network behaviour (checked by hand).
