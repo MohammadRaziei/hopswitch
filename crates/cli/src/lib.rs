@@ -9,7 +9,7 @@ mod unsupported;
 
 pub use app::{run, Context};
 pub use command::{
-    parse, AutoCommand, AutoOption, AutoTarget, Command, DnsCommand, PingOptions, PingScope,
+    parse, AutoCommand, AutoOption, Command, DnsAutoCommand, DnsCommand, PingOptions, PingScope,
     ProxyCommand,
 };
 pub use dirs::{default_dir, Platform};

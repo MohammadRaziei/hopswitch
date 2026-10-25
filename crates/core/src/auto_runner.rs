@@ -3,10 +3,14 @@
 //! The decision logic is [`Autopilot`]; applying goes through the normal
 //! services, so the original settings are always snapshotted and restorable.
 //! Proxy and DNS are independent: a failure in one never blocks the other.
+//!
+//! The proxy follows the *selected* profile (ADR-0010): a plain proxy is connected
+//! while it answers; a group is connected to its fastest live member, with the same
+//! hysteresis and failover as before. DNS follows its own options and pool.
 
 use crate::{
-    probe_dns_profiles, probe_proxies, AutoConfig, AutoKind, Autopilot, Decision, DnsService,
-    Probe, Prober, Profiles, ProxyService,
+    probe_dns_profiles, probe_proxies, AutoConfig, AutoSettings, Autopilot, Decision, DnsService,
+    Probe, Prober, Profiles, ProxyAuto, ProxyEntry, ProxyProfile, ProxyService,
 };
 
 /// What happened for one kind during a round.
@@ -56,7 +60,7 @@ impl Default for AutoRunner {
 impl AutoRunner {
     /// A runner that gives up on a profile only after several failures in a row.
     pub fn new() -> Self {
-        let settings = AutoKind::default().settings();
+        let settings = AutoSettings::new(false, false);
         Self {
             proxy: Autopilot::new(settings),
             dns: Autopilot::new(settings),
@@ -87,8 +91,7 @@ impl AutoRunner {
         }
     }
 
-    fn settings_for(&self, kind: &AutoKind) -> crate::AutoSettings {
-        let settings = kind.settings();
+    fn decisive_if_asked(&self, settings: AutoSettings) -> AutoSettings {
         if self.decisive {
             settings.with_failures(1).unwrap_or(settings)
         } else {
@@ -103,17 +106,11 @@ impl AutoRunner {
         profiles: &Profiles,
         config: &AutoConfig,
     ) -> KindReport {
-        if !config.proxy.is_enabled() {
+        let Some((pool, settings)) = proxy_plan(profiles, &config.proxy) else {
             return KindReport::idle();
-        }
-        let pool: Vec<_> = config
-            .proxy
-            .pool
-            .iter()
-            .filter_map(|id| profiles.proxy(id).cloned())
-            .collect();
+        };
         let results = probe_proxies(prober, &pool, &config.connectivity);
-        self.proxy.configure(self.settings_for(&config.proxy));
+        self.proxy.configure(self.decisive_if_asked(settings));
         let decision = self.proxy.observe(service.active_id(), &results);
         let result = match &decision {
             Decision::Keep => Ok(()),
@@ -147,7 +144,8 @@ impl AutoRunner {
             .filter_map(|id| profiles.dns(id).cloned())
             .collect();
         let results = probe_dns_profiles(prober, &pool, &config.connectivity);
-        self.dns.configure(self.settings_for(&config.dns));
+        self.dns
+            .configure(self.decisive_if_asked(config.dns.settings()));
         let decision = self.dns.observe(service.active_id(), &results);
         let result = match &decision {
             Decision::Keep => Ok(()),
@@ -161,6 +159,27 @@ impl AutoRunner {
             probes: results,
             decision,
             error: result.err().map(|e| e.to_string()),
+        }
+    }
+}
+
+/// What the proxy automation works on: the profiles to probe (in priority order) and
+/// how to decide. `None` when there is nothing to do.
+fn proxy_plan(profiles: &Profiles, auto: &ProxyAuto) -> Option<(Vec<ProxyProfile>, AutoSettings)> {
+    if !auto.is_enabled() {
+        return None;
+    }
+    match profiles.proxy_entry(auto.selected.as_deref()?)? {
+        // One proxy: connect while it answers, give up after repeated failures.
+        ProxyEntry::Proxy(proxy) => Some((vec![proxy.clone()], AutoSettings::new(true, false))),
+        // A group: the fastest live member, with switching and failover.
+        ProxyEntry::Group(group) => {
+            let members = group
+                .members()
+                .iter()
+                .filter_map(|id| profiles.proxy(id).cloned())
+                .collect();
+            Some((members, AutoSettings::new(true, true)))
         }
     }
 }

@@ -40,6 +40,12 @@ pub enum ValidationError {
     /// The DNS server is not a usable IP address.
     #[error("invalid DNS server address: {0}")]
     InvalidDnsServer(String),
+    /// A proxy group has no members.
+    #[error("a group needs at least one member")]
+    NoGroupMembers,
+    /// The same member appears twice in a group.
+    #[error("duplicate group member: {0}")]
+    DuplicateGroupMember(String),
     /// The profile id is empty.
     #[error("profile id is empty")]
     EmptyId,

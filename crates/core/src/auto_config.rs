@@ -1,12 +1,31 @@
-//! The persisted auto settings (ADR-0009): what is switched on, and which saved
-//! profiles take part in it.
+//! The persisted auto settings (ADR-0009, ADR-0010): for the proxy, a plain
+//! "keep me connected" flag plus the selected profile; for DNS, options and a pool.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::{AutoSettings, ConnectivitySettings};
 
-/// Auto connect / auto switch for one kind of setting (proxy or DNS).
+/// Auto connect for the proxy: a plain flag, and the profile to connect to
+/// (a proxy or a group; set by `proxy use`, kept across disconnects).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProxyAuto {
+    /// Keep the system connected to the selected profile.
+    #[serde(default)]
+    pub connect: bool,
+    /// Id of the selected proxy or group.
+    #[serde(default)]
+    pub selected: Option<String>,
+}
+
+impl ProxyAuto {
+    /// Whether automation has anything to do (flag on *and* a profile selected).
+    pub fn is_enabled(&self) -> bool {
+        self.connect && self.selected.is_some()
+    }
+}
+
+/// Auto connect / auto switch for DNS: options plus the pool they work on.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AutoKind {
     /// Connect when something answers; disconnect when nothing does.
@@ -53,7 +72,7 @@ impl AutoKind {
 pub struct AutoConfig {
     /// Auto settings for the proxy.
     #[serde(default)]
-    pub proxy: AutoKind,
+    pub proxy: ProxyAuto,
     /// Auto settings for DNS.
     #[serde(default)]
     pub dns: AutoKind,

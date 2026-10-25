@@ -1,52 +1,69 @@
-//! The persisted auto settings: what is on, and which profiles take part.
+//! The persisted auto settings (ADR-0009, ADR-0010): proxy follows the selected
+//! profile; DNS keeps its own options and pool.
 
-use hopswitch_core::{AutoConfig, AutoKind, ConnectivitySettings};
+use hopswitch_core::{AutoConfig, AutoKind, ConnectivitySettings, ProxyAuto};
 
 #[test]
 fn everything_is_off_and_empty_by_default() {
     let config = AutoConfig::default();
 
-    for kind in [&config.proxy, &config.dns] {
-        assert!(!kind.connect && !kind.switch && kind.pool.is_empty());
-        assert!(!kind.is_enabled());
-    }
+    assert!(!config.proxy.connect);
+    assert_eq!(config.proxy.selected, None);
+    assert!(!config.proxy.is_enabled());
+    assert!(!config.dns.connect && !config.dns.switch && config.dns.pool.is_empty());
+    assert!(!config.dns.is_enabled());
     assert_eq!(config.connectivity, ConnectivitySettings::default());
 }
 
 #[test]
-fn a_kind_is_enabled_by_either_option() {
-    let connect = AutoKind {
+fn proxy_automation_needs_both_the_flag_and_a_selected_profile() {
+    let only_flag = ProxyAuto {
         connect: true,
-        ..AutoKind::default()
+        selected: None,
     };
-    let switch = AutoKind {
-        switch: true,
-        ..AutoKind::default()
+    let only_selection = ProxyAuto {
+        connect: false,
+        selected: Some("smart".into()),
+    };
+    let both = ProxyAuto {
+        connect: true,
+        selected: Some("smart".into()),
     };
 
-    assert!(connect.is_enabled() && switch.is_enabled());
+    assert!(!only_flag.is_enabled());
+    assert!(!only_selection.is_enabled());
+    assert!(both.is_enabled());
 }
 
 #[test]
-fn the_pool_keeps_order_and_ignores_duplicates() {
-    let mut kind = AutoKind::default();
+fn dns_is_enabled_by_either_option_and_keeps_an_ordered_pool() {
+    let mut dns = AutoKind {
+        connect: true,
+        ..AutoKind::default()
+    };
+    assert!(dns.is_enabled());
+    assert!(AutoKind {
+        switch: true,
+        ..AutoKind::default()
+    }
+    .is_enabled());
 
-    assert!(kind.add_to_pool("b"));
-    assert!(kind.add_to_pool("a"));
-    assert!(!kind.add_to_pool("b"), "already there");
-    assert_eq!(kind.pool, ["b", "a"]);
-
-    assert!(kind.remove_from_pool("b"));
-    assert!(!kind.remove_from_pool("b"), "already gone");
-    assert_eq!(kind.pool, ["a"]);
+    assert!(dns.add_to_pool("b"));
+    assert!(dns.add_to_pool("a"));
+    assert!(!dns.add_to_pool("b"), "already there");
+    assert_eq!(dns.pool, ["b", "a"]);
+    assert!(dns.remove_from_pool("b"));
+    assert!(!dns.remove_from_pool("b"), "already gone");
+    assert_eq!(dns.pool, ["a"]);
 }
 
 #[test]
 fn round_trips_through_json_and_tolerates_missing_fields() {
     let mut config = AutoConfig::default();
     config.proxy.connect = true;
-    config.proxy.add_to_pool("fast");
+    config.proxy.selected = Some("smart".into());
     config.dns.switch = true;
+    config.dns.add_to_pool("cloudflare");
     config.connectivity =
         ConnectivitySettings::new("http://probe.test/x", "probe.test", 1500, 10).unwrap();
 
@@ -58,7 +75,21 @@ fn round_trips_through_json_and_tolerates_missing_fields() {
         AutoConfig::default()
     );
     let partial: AutoConfig = serde_json::from_str(r#"{"proxy":{"connect":true}}"#).unwrap();
-    assert!(partial.proxy.connect && partial.proxy.pool.is_empty());
+    assert!(partial.proxy.connect && partial.proxy.selected.is_none());
+}
+
+#[test]
+fn the_old_proxy_pool_and_switch_fields_are_ignored_not_fatal() {
+    let old = r#"{"proxy":{"connect":true,"switch":true,"pool":["a","b"]},"dns":{"switch":true,"pool":["cf"]}}"#;
+
+    let config: AutoConfig = serde_json::from_str(old).unwrap();
+
+    assert!(config.proxy.connect, "the flag survives");
+    assert_eq!(
+        config.proxy.selected, None,
+        "the old pool is not turned into a selection"
+    );
+    assert_eq!(config.dns.pool, ["cf"], "DNS is unchanged");
 }
 
 #[test]

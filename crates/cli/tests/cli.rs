@@ -590,9 +590,9 @@ fn ping_reports_a_damaged_profiles_file() {
     assert!(message.contains("corrupt"), "{message}");
 }
 
-// ---------- auto settings ----------
+// ---------- groups ----------
 
-fn auto_world() -> Env {
+fn world() -> Env {
     let e = env_with(
         FakeProber::new()
             .with_proxy("socks5://127.0.0.1:1080", alive(42))
@@ -614,23 +614,182 @@ fn fast_proxy() -> ProxyState {
     ProxyState::Manual(ProxyConfig::new(ProxyScheme::Socks5, "127.0.0.1", 1080).unwrap())
 }
 
-fn other_proxy() -> ProxyState {
-    ProxyState::Manual(ProxyConfig::new(ProxyScheme::Socks5, "127.0.0.1", 2080).unwrap())
+fn with_group() -> Env {
+    let e = world();
+    e.ok(&["proxy", "add-group", "Smart", "down", "other", "fast"]);
+    e
 }
 
 #[test]
+fn a_group_is_saved_and_listed_with_its_members_in_order() {
+    let e = world();
+
+    let out = e.ok(&["proxy", "add-group", "Smart", "Other", "fast"]);
+    let list = e.ok(&["proxy", "list"]);
+
+    assert!(out.contains("smart"), "{out}");
+    let line = line_with(&list, "Smart");
+    assert!(
+        line.contains("fastest") && line.contains("other, fast"),
+        "{list}"
+    );
+    assert!(
+        list.contains("socks5://127.0.0.1:1080"),
+        "plain proxies are still listed: {list}"
+    );
+}
+
+#[test]
+fn a_group_can_only_contain_saved_plain_proxies() {
+    let e = with_group();
+
+    assert!(e
+        .fails(&["proxy", "add-group", "G", "ghost"])
+        .contains("ghost"));
+    assert!(
+        e.fails(&["proxy", "add-group", "G", "fast", "Smart"])
+            .contains("Smart"),
+        "no group inside a group"
+    );
+    assert!(
+        e.fails(&["proxy", "add-group", "G", "fast", "FAST"])
+            .contains("fast"),
+        "no repeated member"
+    );
+    assert_eq!(
+        e.ok(&["proxy", "list"]).matches("fastest").count(),
+        1,
+        "nothing half-saved"
+    );
+}
+
+#[test]
+fn group_ids_never_collide_with_proxy_ids() {
+    let e = world();
+
+    assert!(e
+        .ok(&["proxy", "add-group", "Fast", "other"])
+        .contains("fast-2"));
+    assert!(e
+        .ok(&["proxy", "add-group", "Fast", "other"])
+        .contains("fast-3"));
+}
+
+#[test]
+fn a_proxy_in_use_by_a_group_cannot_be_removed() {
+    let e = with_group();
+
+    let message = e.fails(&["proxy", "remove", "other"]);
+
+    assert!(message.contains("smart"), "{message}");
+    e.ok(&["proxy", "remove", "smart"]);
+    e.ok(&["proxy", "remove", "other"]);
+}
+
+#[test]
+fn using_a_group_applies_its_fastest_live_member() {
+    let e = with_group();
+
+    let out = e.ok(&["proxy", "use", "smart"]);
+
+    assert_eq!(
+        proxy_now(&e),
+        fast_proxy(),
+        "down is dead, fast beats other"
+    );
+    assert!(
+        out.contains("Fast") && out.contains("Smart") && out.contains("42 ms"),
+        "{out}"
+    );
+    assert!(e.file("session-proxy.json").exists());
+}
+
+#[test]
+fn using_a_group_whose_members_are_all_dead_changes_nothing() {
+    let e = world();
+    e.ok(&["proxy", "add-group", "Dead", "down"]);
+
+    let message = e.fails(&["proxy", "use", "dead"]);
+
+    assert!(message.contains("Dead"), "{message}");
+    assert_eq!(proxy_now(&e), users_proxy());
+    assert!(!e.file("session-proxy.json").exists());
+    assert!(
+        !e.ok(&["auto", "status"]).contains("dead"),
+        "the selection is untouched"
+    );
+}
+
+#[test]
+fn using_a_profile_selects_it_for_auto_connect() {
+    let e = with_group();
+    assert!(e.ok(&["auto", "status"]).contains("none selected"));
+
+    e.ok(&["proxy", "use", "fast"]);
+    assert!(line_with(&e.ok(&["auto", "status"]), "proxy:").contains("profile: fast"));
+
+    e.ok(&["proxy", "use", "smart"]);
+    assert!(line_with(&e.ok(&["auto", "status"]), "proxy:").contains("profile: smart"));
+}
+
+#[test]
+fn status_and_list_show_which_group_the_active_proxy_came_from() {
+    let e = with_group();
+    e.ok(&["proxy", "use", "smart"]);
+
+    let status = e.ok(&["status"]);
+    let list = e.ok(&["proxy", "list"]);
+
+    assert!(
+        line_with(&status, "proxy:").contains("Fast")
+            && line_with(&status, "proxy:").contains("via Smart"),
+        "{status}"
+    );
+    assert!(line_with(&list, "smart").starts_with('*'), "{list}");
+    assert!(line_with(&list, "fast").starts_with('*'), "{list}");
+}
+
+#[test]
+fn removing_the_selected_profile_clears_the_selection() {
+    let e = with_group();
+    e.ok(&["proxy", "use", "smart"]);
+    e.ok(&["proxy", "off"]);
+
+    e.ok(&["proxy", "remove", "smart"]);
+
+    assert!(e.ok(&["auto", "status"]).contains("none selected"));
+}
+
+#[test]
+fn ping_shows_a_groups_best_member() {
+    let e = with_group();
+    e.ok(&["proxy", "add-group", "Dead", "down"]);
+
+    let out = e.ok(&["ping", "proxy"]);
+
+    let smart = line_with(&out, "smart");
+    assert!(smart.contains("Fast") && smart.contains("42 ms"), "{out}");
+    assert!(line_with(&out, "dead").contains("unreachable"), "{out}");
+}
+
+// ---------- auto settings ----------
+
+#[test]
 fn auto_is_off_and_empty_until_configured() {
-    let e = auto_world();
+    let e = world();
 
     let out = e.ok(&["auto", "status"]);
 
-    for kind in ["proxy:", "dns:"] {
-        let line = line_with(&out, kind);
-        assert!(
-            line.contains("connect off") && line.contains("switch off"),
-            "{out}"
-        );
-    }
+    let proxy = line_with(&out, "proxy:");
+    assert!(
+        proxy.contains("connect off") && proxy.contains("none selected"),
+        "{out}"
+    );
+    let dns = line_with(&out, "dns:");
+    assert!(
+        dns.contains("connect off") && dns.contains("switch off"),
+        "{out}"
+    );
     assert!(out.contains("(empty)"), "{out}");
     assert!(
         out.contains("generate_204") && out.contains("3000 ms") && out.contains("30 s"),
@@ -639,18 +798,14 @@ fn auto_is_off_and_empty_until_configured() {
 }
 
 #[test]
-fn auto_options_are_saved_per_kind() {
-    let e = auto_world();
+fn proxy_and_dns_options_are_saved_independently() {
+    let e = world();
 
     e.ok(&["auto", "proxy", "connect", "on"]);
     e.ok(&["auto", "dns", "switch", "on"]);
     let out = e.ok(&["auto", "status"]);
 
-    let proxy = line_with(&out, "proxy:");
-    assert!(
-        proxy.contains("connect on") && proxy.contains("switch off"),
-        "{out}"
-    );
+    assert!(line_with(&out, "proxy:").contains("connect on"), "{out}");
     let dns = line_with(&out, "dns:");
     assert!(
         dns.contains("connect off") && dns.contains("switch on"),
@@ -662,57 +817,61 @@ fn auto_options_are_saved_per_kind() {
 }
 
 #[test]
-fn the_pool_takes_profiles_by_name_or_id_in_order_without_duplicates() {
-    let e = auto_world();
+fn turning_auto_connect_on_without_a_selection_says_what_is_missing() {
+    let e = world();
 
-    e.ok(&["auto", "proxy", "pool", "add", "Fast"]);
-    e.ok(&["auto", "proxy", "pool", "add", "down"]);
-    let again = e.ok(&["auto", "proxy", "pool", "add", "fast"]);
+    let out = e.ok(&["auto", "proxy", "connect", "on"]);
+
+    assert!(out.contains("proxy use"), "{out}");
+}
+
+#[test]
+fn the_dns_pool_takes_profiles_by_name_or_id_in_order_without_duplicates() {
+    let e = world();
+    e.ok(&["dns", "add", "Quad", "9.9.9.9"]);
+
+    e.ok(&["auto", "dns", "pool", "add", "Quad"]);
+    e.ok(&["auto", "dns", "pool", "add", "cf"]);
+    let again = e.ok(&["auto", "dns", "pool", "add", "quad"]);
     let out = e.ok(&["auto", "status"]);
 
     assert!(again.contains("already"), "{again}");
-    assert!(out.contains("fast, down"), "{out}");
+    assert!(out.contains("quad, cf"), "{out}");
 
-    e.ok(&["auto", "proxy", "pool", "remove", "Fast"]);
-    assert!(e.ok(&["auto", "status"]).contains("down"));
+    e.ok(&["auto", "dns", "pool", "remove", "Quad"]);
+    assert!(!e.ok(&["auto", "status"]).contains("quad"));
     assert!(e
-        .fails(&["auto", "proxy", "pool", "remove", "fast"])
-        .contains("fast"));
+        .fails(&["auto", "dns", "pool", "remove", "quad"])
+        .contains("quad"));
 }
 
 #[test]
-fn only_saved_profiles_of_the_right_kind_can_join_a_pool() {
-    let e = auto_world();
+fn only_saved_dns_profiles_can_join_the_dns_pool() {
+    let e = world();
 
     assert!(e
-        .fails(&["auto", "proxy", "pool", "add", "ghost"])
+        .fails(&["auto", "dns", "pool", "add", "ghost"])
         .contains("ghost"));
     assert!(
-        e.fails(&["auto", "proxy", "pool", "add", "Cf"])
-            .contains("Cf"),
-        "a DNS profile is not a proxy"
+        e.fails(&["auto", "dns", "pool", "add", "Fast"])
+            .contains("Fast"),
+        "a proxy is not a DNS profile"
     );
-    assert!(e
-        .fails(&["auto", "dns", "pool", "add", "Fast"])
-        .contains("Fast"));
-    e.ok(&["auto", "dns", "pool", "add", "Cf"]);
 }
 
 #[test]
-fn removing_a_profile_also_removes_it_from_the_pool() {
-    let e = auto_world();
-    e.ok(&["auto", "proxy", "pool", "add", "fast"]);
+fn removing_a_dns_profile_also_removes_it_from_the_pool() {
+    let e = world();
     e.ok(&["auto", "dns", "pool", "add", "cf"]);
 
-    e.ok(&["proxy", "remove", "fast"]);
     e.ok(&["dns", "remove", "cf"]);
 
-    assert_eq!(e.ok(&["auto", "status"]).matches("(empty)").count(), 2);
+    assert!(e.ok(&["auto", "status"]).contains("(empty)"));
 }
 
 #[test]
 fn test_settings_are_saved_and_used_by_ping_unless_overridden() {
-    let e = auto_world();
+    let e = world();
 
     e.ok(&[
         "auto",
@@ -748,7 +907,7 @@ fn test_settings_are_saved_and_used_by_ping_unless_overridden() {
 
 #[test]
 fn invalid_test_settings_are_refused_and_nothing_is_saved() {
-    let e = auto_world();
+    let e = world();
 
     for args in [
         ["auto", "set", "--timeout", "100"],
@@ -763,7 +922,7 @@ fn invalid_test_settings_are_refused_and_nothing_is_saved() {
 
 #[test]
 fn a_damaged_auto_file_is_reported_but_off_still_works() {
-    let e = auto_world();
+    let e = world();
     e.ok(&["proxy", "use", "fast"]);
     fs::write(e.file("auto.json"), b"{ broken").unwrap();
 
@@ -775,50 +934,114 @@ fn a_damaged_auto_file_is_reported_but_off_still_works() {
     );
     e.ok(&["off"]);
     assert_eq!(proxy_now(&e), users_proxy());
-    assert_eq!(fs::read(e.file("auto.json")).unwrap(), b"{ broken");
+    assert_eq!(
+        fs::read(e.file("auto.json")).unwrap(),
+        b"{ broken",
+        "left untouched"
+    );
+}
+
+// ---------- a manual disconnect wins over automation ----------
+
+#[test]
+fn disconnecting_by_hand_turns_auto_connect_off_and_says_so() {
+    let e = world();
+    e.ok(&["proxy", "use", "fast"]);
+    e.ok(&["auto", "proxy", "connect", "on"]);
+
+    let out = e.ok(&["proxy", "off"]);
+
+    assert!(out.to_lowercase().contains("auto connect"), "{out}");
+    let status = e.ok(&["auto", "status"]);
+    assert!(
+        line_with(&status, "proxy:").contains("connect off"),
+        "{status}"
+    );
+    assert!(
+        line_with(&status, "proxy:").contains("profile: fast"),
+        "the selection is kept: {status}"
+    );
+}
+
+#[test]
+fn off_does_the_same_for_both_kinds_but_only_for_what_was_active() {
+    let e = world();
+    e.ok(&["proxy", "use", "fast"]);
+    e.ok(&["auto", "proxy", "connect", "on"]);
+    e.ok(&["auto", "dns", "connect", "on"]); // DNS was never connected
+
+    let out = e.ok(&["off"]);
+
+    let status = e.ok(&["auto", "status"]);
+    assert!(
+        line_with(&status, "proxy:").contains("connect off"),
+        "{status}"
+    );
+    assert!(
+        line_with(&status, "dns:").contains("connect on"),
+        "{status}"
+    );
+    assert!(out.to_lowercase().contains("proxy"), "{out}");
+}
+
+#[test]
+fn dns_off_turns_dns_auto_connect_off() {
+    let e = world();
+    e.ok(&["dns", "use", "cf"]);
+    e.ok(&["auto", "dns", "connect", "on"]);
+
+    e.ok(&["dns", "off"]);
+
+    assert!(line_with(&e.ok(&["auto", "status"]), "dns:").contains("connect off"));
+}
+
+#[test]
+fn off_with_nothing_active_leaves_the_flags_alone() {
+    let e = world();
+    e.ok(&["auto", "proxy", "connect", "on"]);
+
+    e.ok(&["proxy", "off"]);
+
+    assert!(line_with(&e.ok(&["auto", "status"]), "proxy:").contains("connect on"));
 }
 
 // ---------- auto run --once ----------
 
-fn enable_proxy_auto(e: &Env, connect: bool, switch: bool, pool: &[&str]) {
-    if connect {
-        e.ok(&["auto", "proxy", "connect", "on"]);
-    }
-    if switch {
-        e.ok(&["auto", "proxy", "switch", "on"]);
-    }
-    for name in pool {
-        e.ok(&["auto", "proxy", "pool", "add", name]);
-    }
+/// Selects `selected` for auto connect and leaves the system disconnected with the flag on.
+fn auto_proxy(e: &Env, selected: &str) {
+    e.ok(&["proxy", "use", selected]);
+    e.ok(&["proxy", "off"]);
+    e.ok(&["auto", "proxy", "connect", "on"]);
 }
 
 #[test]
-fn run_once_connects_to_the_first_live_profile() {
-    let e = auto_world();
-    enable_proxy_auto(&e, true, false, &["down", "fast", "other"]);
+fn run_once_connects_the_selected_proxy() {
+    let e = world();
+    auto_proxy(&e, "fast");
+    assert_eq!(proxy_now(&e), users_proxy());
 
     let out = e.ok(&["auto", "run", "--once"]);
 
     assert_eq!(proxy_now(&e), fast_proxy());
     assert!(out.contains("Fast") && out.contains("42 ms"), "{out}");
-    assert!(e.file("session-proxy.json").exists());
 }
 
 #[test]
-fn run_once_with_both_options_picks_the_fastest() {
-    let e = auto_world();
-    enable_proxy_auto(&e, true, true, &["other", "fast"]);
+fn run_once_connects_a_selected_group_to_its_fastest_member() {
+    let e = with_group();
+    auto_proxy(&e, "smart");
 
-    e.ok(&["auto", "run", "--once"]);
+    let out = e.ok(&["auto", "run", "--once"]);
 
     assert_eq!(proxy_now(&e), fast_proxy());
+    assert!(out.contains("Smart"), "{out}");
 }
 
 #[test]
-fn run_once_disconnects_at_once_when_the_active_profile_stops_answering() {
-    let e = auto_world();
+fn run_once_disconnects_at_once_when_the_active_proxy_stops_answering() {
+    let e = world();
     e.ok(&["proxy", "use", "down"]);
-    enable_proxy_auto(&e, true, false, &["down"]);
+    e.ok(&["auto", "proxy", "connect", "on"]);
 
     let out = e.ok(&["auto", "run", "--once"]);
 
@@ -828,31 +1051,8 @@ fn run_once_disconnects_at_once_when_the_active_profile_stops_answering() {
 }
 
 #[test]
-fn run_once_with_only_switch_never_connects() {
-    let e = auto_world();
-    enable_proxy_auto(&e, false, true, &["fast"]);
-
-    let out = e.ok(&["auto", "run", "--once"]);
-
-    assert_eq!(proxy_now(&e), users_proxy());
-    assert!(out.contains("Nothing to change"), "{out}");
-}
-
-#[test]
-fn run_once_leaves_a_profile_chosen_by_hand_outside_the_pool_alone() {
-    let e = auto_world();
-    e.ok(&["proxy", "use", "other"]);
-    enable_proxy_auto(&e, true, true, &["fast"]);
-
-    let out = e.ok(&["auto", "run", "--once"]);
-
-    assert_eq!(proxy_now(&e), other_proxy());
-    assert!(out.contains("Nothing to change"), "{out}");
-}
-
-#[test]
-fn run_once_with_everything_off_sends_no_traffic() {
-    let e = auto_world();
+fn run_once_with_nothing_to_automate_sends_no_traffic() {
+    let e = world();
 
     let out = e.ok(&["auto", "run", "--once"]);
 
@@ -862,9 +1062,20 @@ fn run_once_with_everything_off_sends_no_traffic() {
 }
 
 #[test]
+fn run_once_with_the_flag_on_but_nothing_selected_does_nothing() {
+    let e = world();
+    e.ok(&["auto", "proxy", "connect", "on"]);
+
+    let out = e.ok(&["auto", "run", "--once"]);
+
+    assert!(out.contains("off") || out.contains("nothing"), "{out}");
+    assert!(e.prober.calls().is_empty());
+}
+
+#[test]
 fn run_once_reports_a_failing_kind_without_blocking_the_other() {
-    let e = auto_world();
-    enable_proxy_auto(&e, true, false, &["fast"]);
+    let e = world();
+    auto_proxy(&e, "fast");
     e.ok(&["auto", "dns", "connect", "on"]);
     e.ok(&["auto", "dns", "pool", "add", "cf"]);
     e.net
@@ -878,11 +1089,19 @@ fn run_once_reports_a_failing_kind_without_blocking_the_other() {
 }
 
 #[test]
-fn run_once_with_a_missing_pool_member_or_no_profiles_is_harmless() {
+fn run_once_survives_a_selection_that_no_longer_exists() {
     let e = env();
     e.ok(&["auto", "proxy", "connect", "on"]);
+    fs::write(
+        e.file("auto.json"),
+        r#"{"version":2,"proxy":{"connect":true,"selected":"ghost"}}"#,
+    )
+    .unwrap();
 
     let out = e.ok(&["auto", "run", "--once"]);
 
-    assert!(out.contains("Nothing to change"), "{out}");
+    assert!(
+        out.contains("Nothing to change") || out.contains("off"),
+        "{out}"
+    );
 }

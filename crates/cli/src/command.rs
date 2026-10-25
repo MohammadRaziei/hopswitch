@@ -47,15 +47,6 @@ pub struct PingOptions {
     pub timeout_ms: Option<u32>,
 }
 
-/// Which kind of setting an `auto` command is about.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AutoTarget {
-    /// The system proxy.
-    Proxy,
-    /// The system DNS.
-    Dns,
-}
-
 /// One of the two automatic behaviours.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AutoOption {
@@ -65,10 +56,26 @@ pub enum AutoOption {
     Switch,
 }
 
+/// `hopswitch auto dns ...`: DNS keeps its own options and pool (ADR-0010).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DnsAutoCommand {
+    /// Turn one option on or off.
+    Toggle {
+        /// Connect or switch.
+        option: AutoOption,
+        /// The new state.
+        on: bool,
+    },
+    /// Add a saved DNS profile to the pool (id or name).
+    PoolAdd(String),
+    /// Remove a profile from the pool.
+    PoolRemove(String),
+}
+
 /// `hopswitch auto ...`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AutoCommand {
-    /// Show what is on, the pools and the test settings.
+    /// Show what is on, the selected proxy profile, the DNS pool and the test settings.
     Status,
     /// Change the connectivity test settings.
     Set {
@@ -81,29 +88,13 @@ pub enum AutoCommand {
         /// Seconds between rounds of `auto run`.
         interval_secs: Option<u32>,
     },
-    /// Turn one option on or off for one kind.
-    Toggle {
-        /// Proxy or DNS.
-        target: AutoTarget,
-        /// Connect or switch.
-        option: AutoOption,
+    /// Keep the proxy connected to the selected profile (a plain flag; ADR-0010).
+    ProxyConnect {
         /// The new state.
         on: bool,
     },
-    /// Add a saved profile to a pool.
-    PoolAdd {
-        /// Proxy or DNS.
-        target: AutoTarget,
-        /// Profile id or name.
-        name: String,
-    },
-    /// Remove a profile from a pool.
-    PoolRemove {
-        /// Proxy or DNS.
-        target: AutoTarget,
-        /// Profile id or name.
-        name: String,
-    },
+    /// DNS options and pool.
+    Dns(DnsAutoCommand),
     /// Run the automatic modes (forever, or one round with `--once`).
     Run {
         /// Do a single round and exit.
@@ -129,7 +120,14 @@ pub enum ProxyCommand {
         /// Hosts that skip the proxy.
         bypass: Vec<String>,
     },
-    /// Delete a saved profile.
+    /// Save a group: the fastest live member is used (ADR-0010).
+    AddGroup {
+        /// Display name.
+        name: String,
+        /// Member proxies (id or name), in priority order.
+        members: Vec<String>,
+    },
+    /// Delete a saved profile or group.
     Remove(String),
 }
 
@@ -209,6 +207,15 @@ fn parse_proxy(rest: &[String]) -> Result<ProxyCommand, CliError> {
         "use" => one_arg(args, "profile or preset name").map(ProxyCommand::Use),
         "remove" => one_arg(args, "profile name").map(ProxyCommand::Remove),
         "add" => parse_proxy_add(args),
+        "add-group" => match args {
+            [name, members @ ..] if !members.is_empty() => Ok(ProxyCommand::AddGroup {
+                name: name.clone(),
+                members: members.to_vec(),
+            }),
+            _ => Err(CliError::usage(
+                "usage: hopswitch proxy add-group <name> <member> [<member>...]",
+            )),
+        },
         other => Err(CliError::usage(format!("unknown proxy command `{other}`"))),
     }
 }
@@ -311,7 +318,7 @@ fn option_value<'a>(
 }
 
 const AUTO_USAGE: &str = "expected: auto status | set [--url U] [--domain D] [--timeout MS] \
-[--interval SECS] | run [--once] | <proxy|dns> connect|switch on|off | <proxy|dns> pool add|remove <name>";
+[--interval SECS] | run [--once] | proxy connect on|off | dns connect|switch on|off | dns pool add|remove <name>";
 
 fn parse_auto(args: &[String]) -> Result<AutoCommand, CliError> {
     let Some((sub, rest)) = args.split_first() else {
@@ -325,8 +332,8 @@ fn parse_auto(args: &[String]) -> Result<AutoCommand, CliError> {
             [other, ..] => Err(CliError::usage(format!("unexpected argument `{other}`"))),
         },
         "set" => parse_auto_set(rest),
-        "proxy" => parse_auto_kind(AutoTarget::Proxy, rest),
-        "dns" => parse_auto_kind(AutoTarget::Dns, rest),
+        "proxy" => parse_auto_proxy(rest),
+        "dns" => parse_auto_dns(rest).map(AutoCommand::Dns),
         other => Err(CliError::usage(format!(
             "unknown auto command `{other}`; {AUTO_USAGE}"
         ))),
@@ -368,34 +375,48 @@ fn number_option<'a>(
         .map_err(|_| CliError::usage(format!("{flag} needs a whole number, got `{value}`")))
 }
 
-fn parse_auto_kind(target: AutoTarget, args: &[String]) -> Result<AutoCommand, CliError> {
+fn parse_on_off(word: &str) -> Result<bool, CliError> {
+    match word {
+        "on" => Ok(true),
+        "off" => Ok(false),
+        other => Err(CliError::usage(format!(
+            "expected `on` or `off`, got `{other}`"
+        ))),
+    }
+}
+
+fn parse_auto_proxy(args: &[String]) -> Result<AutoCommand, CliError> {
+    let texts: Vec<&str> = args.iter().map(String::as_str).collect();
+    match texts.as_slice() {
+        ["connect", state] => Ok(AutoCommand::ProxyConnect {
+            on: parse_on_off(state)?,
+        }),
+        ["switch" | "pool", ..] => Err(CliError::usage(
+            "the proxy follows its selected profile: choose one with `hopswitch proxy use <name>` \
+             (a group switches to its fastest member), then `hopswitch auto proxy connect on`",
+        )),
+        _ => Err(CliError::usage(
+            "usage: hopswitch auto proxy connect on|off",
+        )),
+    }
+}
+
+fn parse_auto_dns(args: &[String]) -> Result<DnsAutoCommand, CliError> {
     let texts: Vec<&str> = args.iter().map(String::as_str).collect();
     match texts.as_slice() {
         [option @ ("connect" | "switch"), state] => {
-            let on = match *state {
-                "on" => true,
-                "off" => false,
-                other => {
-                    return Err(CliError::usage(format!(
-                        "expected `on` or `off`, got `{other}`"
-                    )))
-                }
-            };
             let option = if *option == "connect" {
                 AutoOption::Connect
             } else {
                 AutoOption::Switch
             };
-            Ok(AutoCommand::Toggle { target, option, on })
+            Ok(DnsAutoCommand::Toggle {
+                option,
+                on: parse_on_off(state)?,
+            })
         }
-        ["pool", "add", name] => Ok(AutoCommand::PoolAdd {
-            target,
-            name: (*name).to_owned(),
-        }),
-        ["pool", "remove", name] => Ok(AutoCommand::PoolRemove {
-            target,
-            name: (*name).to_owned(),
-        }),
+        ["pool", "add", name] => Ok(DnsAutoCommand::PoolAdd((*name).to_owned())),
+        ["pool", "remove", name] => Ok(DnsAutoCommand::PoolRemove((*name).to_owned())),
         _ => Err(CliError::usage(AUTO_USAGE)),
     }
 }

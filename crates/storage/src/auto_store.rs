@@ -11,11 +11,12 @@ use serde_json::Value;
 use crate::write_atomic;
 
 /// Highest schema version this build reads and the one it writes.
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 
 /// Stores the auto settings in a single versioned JSON file, replaced atomically on save.
 ///
-/// File shape: `{ "version": 1, "proxy": {...}, "dns": {...}, "connectivity": {...} }`.
+/// File shape: `{ "version": 2, "proxy": { "connect", "selected" }, "dns": {...}, "connectivity": {...} }`.
+/// Version 1 is still read; its proxy `switch` and `pool` fields are ignored (ADR-0010).
 /// A damaged file is reported, never overwritten or deleted.
 #[derive(Debug, Clone)]
 pub struct JsonFileAutoStore {

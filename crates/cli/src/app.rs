@@ -11,16 +11,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use hopswitch_core::{
-    dns_preset, dns_presets, probe_dns_profiles, probe_proxies, proxy_preset, proxy_presets,
-    restore_all, AutoConfig, AutoConfigStore, AutoKind, AutoRunner, ConnectivitySettings, Decision,
-    DnsConfig, DnsProfile, DnsService, DnsState, Health, Kind, KindReport, NetworkService, Probe,
-    Prober, ProfileRepository, Profiles, ProxyConfig, ProxyProfile, ProxyService, ProxyState,
-    SessionStore, SystemNetwork, TickReport,
+    dns_preset, dns_presets, fastest_alive, probe_dns_profiles, probe_proxies, proxy_preset,
+    proxy_presets, restore_all, AutoConfig, AutoConfigStore, AutoRunner, ConnectivitySettings,
+    Decision, DnsConfig, DnsProfile, DnsService, DnsState, Health, Kind, KindReport,
+    NetworkService, Probe, Prober, ProfileRepository, Profiles, ProxyConfig, ProxyGroup,
+    ProxyProfile, ProxyService, ProxyState, SessionStore, SystemNetwork, TickReport,
 };
 use hopswitch_storage::{JsonFileAutoStore, JsonFileRepository, JsonFileSessionStore};
 
 use crate::command::{
-    parse, AutoCommand, AutoOption, AutoTarget, Command, DnsCommand, PingOptions, PingScope,
+    parse, AutoCommand, AutoOption, Command, DnsAutoCommand, DnsCommand, PingOptions, PingScope,
     ProxyCommand,
 };
 use crate::CliError;
@@ -35,7 +35,8 @@ usage:
   hopswitch proxy off                       restore the original proxy
   hopswitch proxy list                      list saved proxy profiles
   hopswitch proxy add <name> <scheme://host:port> [--bypass a,b]
-  hopswitch proxy remove <name>
+  hopswitch proxy add-group <name> <member>...   use the fastest live member of several proxies
+  hopswitch proxy remove <name>                  (a proxy or a group)
   hopswitch dns use <name|preset>           apply a saved profile or preset
   hopswitch dns off                         restore the original DNS
   hopswitch dns list                        list saved DNS profiles
@@ -44,9 +45,9 @@ usage:
   hopswitch ping [proxy|dns] [--url U] [--domain D] [--timeout MS]
                                             test every saved profile and show latency
   hopswitch auto status                     show the auto settings and pools
-  hopswitch auto proxy|dns connect on|off   connect when something answers, disconnect when not
-  hopswitch auto proxy|dns switch on|off    stay on the fastest profile of the pool
-  hopswitch auto proxy|dns pool add|remove <name>
+  hopswitch auto proxy connect on|off       keep the proxy connected to the profile chosen with `proxy use`
+  hopswitch auto dns connect|switch on|off  DNS: connect when something answers / stay on the fastest
+  hopswitch auto dns pool add|remove <name>
   hopswitch auto set [--url U] [--domain D] [--timeout MS] [--interval SECS]
   hopswitch auto run [--once]               apply the auto settings (Ctrl-C to stop)
   hopswitch off                             restore both proxy and DNS
@@ -116,16 +117,53 @@ impl App {
 
     /// Drops a deleted profile from its pool. A damaged settings file is left alone:
     /// a stale id in a pool is ignored by the runner anyway.
-    fn prune_pool(&self, target: AutoTarget, id: &str) {
+    /// Forgets a deleted proxy or group as the selected profile. A damaged settings file is left
+    /// alone: a stale selection is ignored by the runner anyway.
+    fn forget_proxy(&self, id: &str) {
         if let Ok(mut config) = self.auto_store.load() {
-            let kind = match target {
-                AutoTarget::Proxy => &mut config.proxy,
-                AutoTarget::Dns => &mut config.dns,
-            };
-            if kind.remove_from_pool(id) {
+            if config.proxy.selected.as_deref() == Some(id) {
+                config.proxy.selected = None;
                 let _ = self.auto_store.save(&config);
             }
         }
+    }
+
+    /// Drops a deleted DNS profile from the DNS pool (same rule about damaged files).
+    fn forget_dns(&self, id: &str) {
+        if let Ok(mut config) = self.auto_store.load() {
+            if config.dns.remove_from_pool(id) {
+                let _ = self.auto_store.save(&config);
+            }
+        }
+    }
+
+    /// A manual disconnect wins over automation (ADR-0010): turns auto connect off for the kinds
+    /// that were just disconnected and returns a line to tell the user. Never fails.
+    fn disconnected_by_hand(&self, proxy: bool, dns: bool) -> Vec<String> {
+        let Ok(mut config) = self.auto_store.load() else {
+            return Vec::new();
+        };
+        let mut notes = Vec::new();
+        if proxy && config.proxy.connect {
+            config.proxy.connect = false;
+            notes.push(
+                "Auto connect for proxy is now off, because you disconnected by hand; turn it back on \
+                 with `hopswitch auto proxy connect on`."
+                    .to_owned(),
+            );
+        }
+        if dns && config.dns.connect {
+            config.dns.connect = false;
+            notes.push(
+                "Auto connect for DNS is now off, because you disconnected by hand; turn it back on \
+                 with `hopswitch auto dns connect on`."
+                    .to_owned(),
+            );
+        }
+        if !notes.is_empty() && self.auto_store.save(&config).is_err() {
+            return Vec::new();
+        }
+        notes
     }
 
     fn save(&self, profiles: &Profiles) -> Result<(), CliError> {
@@ -157,6 +195,7 @@ impl App {
             ProxyCommand::Use(key) => self.use_proxy(&key, out),
             ProxyCommand::Off => self.proxy_off(out),
             ProxyCommand::Add { name, spec, bypass } => self.add_proxy(&name, &spec, bypass, out),
+            ProxyCommand::AddGroup { name, members } => self.add_group(&name, &members, out),
             ProxyCommand::Remove(key) => self.remove_proxy(&key, out),
         }
     }
@@ -178,23 +217,83 @@ impl App {
                 ),
             )?;
         }
+        let selected = self.selected_proxy();
+        for group in profiles.groups() {
+            let mark = marker(self.group_is_applied(group, selected.as_deref()));
+            say(
+                out,
+                format!(
+                    "{mark} {}  {}  fastest of: {}",
+                    group.id(),
+                    group.name(),
+                    group.members().join(", ")
+                ),
+            )?;
+        }
         Ok(())
+    }
+
+    /// The selected proxy profile id; a damaged settings file counts as "none".
+    fn selected_proxy(&self) -> Option<String> {
+        self.auto_store
+            .load()
+            .ok()
+            .and_then(|config| config.proxy.selected)
+    }
+
+    /// A group counts as applied when it is the selected profile and one of its members is active.
+    fn group_is_applied(&self, group: &ProxyGroup, selected: Option<&str>) -> bool {
+        selected == Some(group.id())
+            && self
+                .proxy
+                .active_id()
+                .is_some_and(|active| group.members().iter().any(|member| member == active))
     }
 
     fn use_proxy(&mut self, key: &str, out: &mut dyn Write) -> Result<(), CliError> {
         let mut profiles = self.profiles()?;
-        let (profile, is_new) = resolve_proxy(&profiles, key)?;
-        self.proxy.activate(&profile).map_err(CliError::failure)?;
-        if is_new {
-            profiles
-                .add_proxy(profile.clone())
-                .map_err(CliError::failure)?;
-            self.save(&profiles)?;
-        }
-        say(
-            out,
-            format!("Proxy is now {} ({}).", profile.name(), profile.config()),
-        )
+        let mut config = self.auto_config()?;
+        let line = match resolve_proxy_entry(&profiles, key)? {
+            Resolved::Group(group) => {
+                let members: Vec<ProxyProfile> = group
+                    .members()
+                    .iter()
+                    .filter_map(|id| profiles.proxy(id).cloned())
+                    .collect();
+                let probes = probe_proxies(&*self.prober, &members, &config.connectivity);
+                let (best, latency_ms) = fastest_alive(&probes).ok_or_else(|| {
+                    CliError::failure(format!(
+                        "no member of `{}` answers right now; nothing was changed",
+                        group.name()
+                    ))
+                })?;
+                let profile = profiles
+                    .proxy(&best.id)
+                    .cloned()
+                    .ok_or_else(|| CliError::failure("a group member disappeared"))?;
+                self.proxy.activate(&profile).map_err(CliError::failure)?;
+                config.proxy.selected = Some(group.id().to_owned());
+                format!(
+                    "Proxy is now {} ({}) via {}, the fastest member ({latency_ms} ms).",
+                    profile.name(),
+                    profile.config(),
+                    group.name()
+                )
+            }
+            Resolved::Proxy(profile, is_new) => {
+                self.proxy.activate(&profile).map_err(CliError::failure)?;
+                if is_new {
+                    profiles
+                        .add_proxy(profile.clone())
+                        .map_err(CliError::failure)?;
+                    self.save(&profiles)?;
+                }
+                config.proxy.selected = Some(profile.id().to_owned());
+                format!("Proxy is now {} ({}).", profile.name(), profile.config())
+            }
+        };
+        self.save_auto(&config)?;
+        say(out, line)
     }
 
     fn proxy_off(&mut self, out: &mut dyn Write) -> Result<(), CliError> {
@@ -202,7 +301,11 @@ impl App {
             return say(out, "No proxy is active; nothing to restore.");
         }
         self.proxy.deactivate().map_err(CliError::failure)?;
-        say(out, "Proxy restored to its original settings.")
+        say(out, "Proxy restored to its original settings.")?;
+        for note in self.disconnected_by_hand(true, false) {
+            say(out, note)?;
+        }
+        Ok(())
     }
 
     fn add_proxy(
@@ -223,28 +326,69 @@ impl App {
             config.with_bypass(bypass).map_err(CliError::failure)?
         };
         let mut profiles = self.profiles()?;
-        let id = unique_id(&slug(name), |id| profiles.proxy(id).is_some());
+        let id = unique_id(&slug(name), |id| profiles.proxy_entry(id).is_some());
         let profile = ProxyProfile::new(&id, name, config).map_err(CliError::failure)?;
         profiles.add_proxy(profile).map_err(CliError::failure)?;
         self.save(&profiles)?;
         say(out, format!("Saved proxy profile `{id}`."))
     }
 
+    fn add_group(
+        &self,
+        name: &str,
+        members: &[String],
+        out: &mut dyn Write,
+    ) -> Result<(), CliError> {
+        let mut profiles = self.profiles()?;
+        let mut ids = Vec::new();
+        for member in members {
+            let id = find_saved(
+                profiles.proxy_profiles().iter().map(|p| (p.id(), p.name())),
+                member,
+            )
+            .ok_or_else(|| {
+                CliError::failure(format!(
+                    "no saved proxy `{member}` (a group can only contain plain proxies)"
+                ))
+            })?;
+            ids.push(id);
+        }
+        let id = unique_id(&slug(name), |id| profiles.proxy_entry(id).is_some());
+        let group = ProxyGroup::new(&id, name, ids.clone()).map_err(CliError::failure)?;
+        profiles.add_group(group).map_err(CliError::failure)?;
+        self.save(&profiles)?;
+        say(
+            out,
+            format!("Saved group `{id}` (fastest of: {}).", ids.join(", ")),
+        )
+    }
+
     fn remove_proxy(&self, key: &str, out: &mut dyn Write) -> Result<(), CliError> {
         let mut profiles = self.profiles()?;
-        let id = find_saved(
-            profiles.proxy_profiles().iter().map(|p| (p.id(), p.name())),
-            key,
-        )
-        .ok_or_else(|| CliError::failure(format!("no saved proxy profile `{key}`")))?;
+        let everything = profiles
+            .proxy_profiles()
+            .iter()
+            .map(|p| (p.id(), p.name()))
+            .chain(profiles.groups().iter().map(|g| (g.id(), g.name())));
+        let id = find_saved(everything, key)
+            .ok_or_else(|| CliError::failure(format!("no saved proxy profile or group `{key}`")))?;
+
+        if profiles.group(&id).is_some() {
+            profiles.remove_group(&id).map_err(CliError::failure)?;
+            self.save(&profiles)?;
+            self.forget_proxy(&id);
+            return say(out, format!("Removed group `{id}`."));
+        }
         if self.proxy.active_id() == Some(id.as_str()) {
             return Err(CliError::failure(format!(
                 "`{id}` is active; run `hopswitch proxy off` first"
             )));
         }
-        profiles.remove_proxy(&id).map_err(CliError::failure)?;
+        profiles
+            .remove_proxy(&id)
+            .map_err(|e| CliError::failure(format!("{e}; remove the group first")))?;
         self.save(&profiles)?;
-        self.prune_pool(AutoTarget::Proxy, &id);
+        self.forget_proxy(&id);
         say(out, format!("Removed proxy profile `{id}`."))
     }
 
@@ -305,7 +449,11 @@ impl App {
             return say(out, "No DNS profile is active; nothing to restore.");
         }
         self.dns.deactivate().map_err(CliError::failure)?;
-        say(out, "DNS restored to its original settings.")
+        say(out, "DNS restored to its original settings.")?;
+        for note in self.disconnected_by_hand(false, true) {
+            say(out, note)?;
+        }
+        Ok(())
     }
 
     fn add_dns(&self, name: &str, servers: &[String], out: &mut dyn Write) -> Result<(), CliError> {
@@ -332,29 +480,45 @@ impl App {
         }
         profiles.remove_dns(&id).map_err(CliError::failure)?;
         self.save(&profiles)?;
-        self.prune_pool(AutoTarget::Dns, &id);
+        self.forget_dns(&id);
         say(out, format!("Removed DNS profile `{id}`."))
     }
 
     // ---------- both ----------
 
     fn off(&mut self, out: &mut dyn Write) -> Result<(), CliError> {
-        if self.proxy.active_id().is_none() && self.dns.active_id().is_none() {
+        let (proxy_was, dns_was) = (
+            self.proxy.active_id().is_some(),
+            self.dns.active_id().is_some(),
+        );
+        if !proxy_was && !dns_was {
             return say(out, "Nothing to restore: neither proxy nor DNS is active.");
         }
         restore_all(&mut self.proxy, &mut self.dns).map_err(CliError::failure)?;
-        say(out, "Restored the original proxy and DNS settings.")
+        say(out, "Restored the original proxy and DNS settings.")?;
+        for note in self.disconnected_by_hand(proxy_was, dns_was) {
+            say(out, note)?;
+        }
+        Ok(())
     }
 
     fn status(&self, out: &mut dyn Write) -> Result<(), CliError> {
         // A damaged profile file must not break `status`; the id is shown instead.
         let profiles = self.profiles().unwrap_or_default();
 
+        let selected = self.selected_proxy();
         let proxy = match self.proxy.active_id() {
-            Some(id) => profiles.proxy(id).map_or_else(
-                || format!("active: {id}"),
-                |p| format!("active: {} ({})", p.name(), p.config()),
-            ),
+            Some(id) => {
+                let via = selected
+                    .as_deref()
+                    .and_then(|s| profiles.group(s))
+                    .filter(|g| g.members().iter().any(|m| m == id))
+                    .map_or_else(String::new, |g| format!(" via {}", g.name()));
+                profiles.proxy(id).map_or_else(
+                    || format!("active: {id}{via}"),
+                    |p| format!("active: {} ({}){via}", p.name(), p.config()),
+                )
+            }
             None => match self.network.read_proxy() {
                 Ok(ProxyState::Disabled) => "off".to_owned(),
                 Ok(ProxyState::Manual(config)) => format!("{config} (not set by Hopswitch)"),
@@ -406,6 +570,33 @@ impl App {
                     ping_line(active, profile.id(), profile.name(), &target, probe),
                 )?;
             }
+            let selected = self.selected_proxy();
+            for group in profiles.groups() {
+                let members: Vec<Probe> = group
+                    .members()
+                    .iter()
+                    .filter_map(|id| probes.iter().find(|p| p.id == *id).cloned())
+                    .collect();
+                let result = fastest_alive(&members).map_or_else(
+                    || "unreachable".to_owned(),
+                    |(best, ms)| {
+                        let name = profiles
+                            .proxy(&best.id)
+                            .map_or(best.id.as_str(), ProxyProfile::name);
+                        format!("{name} ({ms} ms)")
+                    },
+                );
+                let mark = marker(self.group_is_applied(group, selected.as_deref()));
+                say(
+                    out,
+                    format!(
+                        "{mark} {}  {}  fastest of {}  {result}",
+                        group.id(),
+                        group.name(),
+                        members.len()
+                    ),
+                )?;
+            }
             printed = true;
         }
 
@@ -448,9 +639,8 @@ impl App {
                 interval_secs,
                 out,
             ),
-            AutoCommand::Toggle { target, option, on } => self.auto_toggle(target, option, on, out),
-            AutoCommand::PoolAdd { target, name } => self.pool_add(target, &name, out),
-            AutoCommand::PoolRemove { target, name } => self.pool_remove(target, &name, out),
+            AutoCommand::ProxyConnect { on } => self.proxy_connect(on, out),
+            AutoCommand::Dns(command) => self.dns_auto(command, out),
             AutoCommand::Run { .. } => Err(CliError::failure(
                 "`auto run` is started from the command line only",
             )),
@@ -459,22 +649,33 @@ impl App {
 
     fn auto_status(&self, out: &mut dyn Write) -> Result<(), CliError> {
         let config = self.auto_config()?;
-        for (label, kind) in [("proxy", &config.proxy), ("dns", &config.dns)] {
-            say(
-                out,
-                format!(
-                    "{label}: connect {}, switch {}",
-                    on_off(kind.connect),
-                    on_off(kind.switch)
-                ),
-            )?;
-            let pool = if kind.pool.is_empty() {
-                "(empty)".to_owned()
-            } else {
-                kind.pool.join(", ")
-            };
-            say(out, format!("  pool: {pool}"))?;
-        }
+        let profile = config
+            .proxy
+            .selected
+            .as_deref()
+            .unwrap_or("(none selected)");
+        say(
+            out,
+            format!(
+                "proxy: connect {}, profile: {profile}",
+                on_off(config.proxy.connect)
+            ),
+        )?;
+        let dns = &config.dns;
+        say(
+            out,
+            format!(
+                "dns: connect {}, switch {}",
+                on_off(dns.connect),
+                on_off(dns.switch)
+            ),
+        )?;
+        let pool = if dns.pool.is_empty() {
+            "(empty)".to_owned()
+        } else {
+            dns.pool.join(", ")
+        };
+        say(out, format!("  pool: {pool}"))?;
         let test = &config.connectivity;
         say(
             out,
@@ -509,100 +710,72 @@ impl App {
         say(out, "Test settings saved.")
     }
 
-    fn auto_toggle(
-        &self,
-        target: AutoTarget,
-        option: AutoOption,
-        on: bool,
-        out: &mut dyn Write,
-    ) -> Result<(), CliError> {
+    fn proxy_connect(&self, on: bool, out: &mut dyn Write) -> Result<(), CliError> {
         let mut config = self.auto_config()?;
-        let kind = kind_mut(&mut config, target);
-        match option {
-            AutoOption::Connect => kind.connect = on,
-            AutoOption::Switch => kind.switch = on,
-        }
+        config.proxy.connect = on;
         self.save_auto(&config)?;
-        let what = match option {
-            AutoOption::Connect => "connect",
-            AutoOption::Switch => "switch",
-        };
         say(
             out,
-            format!(
-                "Auto {what} for {} is now {}.",
-                target_name(target),
-                on_off(on)
-            ),
-        )
+            format!("Auto connect for proxy is now {}.", on_off(on)),
+        )?;
+        if on && config.proxy.selected.is_none() {
+            say(
+                out,
+                "No profile is selected yet: choose one with `hopswitch proxy use <name>` \
+                 (a group connects to its fastest member).",
+            )?;
+        }
+        Ok(())
     }
 
-    fn pool_add(
-        &self,
-        target: AutoTarget,
-        name: &str,
-        out: &mut dyn Write,
-    ) -> Result<(), CliError> {
-        let profiles = self.profiles()?;
-        let id = match target {
-            AutoTarget::Proxy => find_saved(
-                profiles.proxy_profiles().iter().map(|p| (p.id(), p.name())),
-                name,
-            ),
-            AutoTarget::Dns => find_saved(
-                profiles.dns_profiles().iter().map(|p| (p.id(), p.name())),
-                name,
-            ),
-        }
-        .ok_or_else(|| {
-            CliError::failure(format!("no saved {} profile `{name}`", target_name(target)))
-        })?;
+    fn dns_auto(&self, command: DnsAutoCommand, out: &mut dyn Write) -> Result<(), CliError> {
         let mut config = self.auto_config()?;
-        if kind_mut(&mut config, target).add_to_pool(&id) {
-            self.save_auto(&config)?;
-            say(
-                out,
-                format!("Added `{id}` to the {} pool.", target_name(target)),
-            )
-        } else {
-            say(
-                out,
-                format!("`{id}` is already in the {} pool.", target_name(target)),
-            )
-        }
-    }
-
-    fn pool_remove(
-        &self,
-        target: AutoTarget,
-        name: &str,
-        out: &mut dyn Write,
-    ) -> Result<(), CliError> {
-        let profiles = self.profiles()?;
-        // A deleted profile can still be removed by its id.
-        let id = match target {
-            AutoTarget::Proxy => find_saved(
-                profiles.proxy_profiles().iter().map(|p| (p.id(), p.name())),
-                name,
-            ),
-            AutoTarget::Dns => find_saved(
-                profiles.dns_profiles().iter().map(|p| (p.id(), p.name())),
-                name,
-            ),
-        }
-        .unwrap_or_else(|| name.to_owned());
-        let mut config = self.auto_config()?;
-        if kind_mut(&mut config, target).remove_from_pool(&id) {
-            self.save_auto(&config)?;
-            say(
-                out,
-                format!("Removed `{id}` from the {} pool.", target_name(target)),
-            )
-        } else {
-            Err(CliError::failure(format!(
-                "`{name}` is not in the {} pool",
-                target_name(target)
-            )))
+        match command {
+            DnsAutoCommand::Toggle { option, on } => {
+                let what = match option {
+                    AutoOption::Connect => {
+                        config.dns.connect = on;
+                        "connect"
+                    }
+                    AutoOption::Switch => {
+                        config.dns.switch = on;
+                        "switch"
+                    }
+                };
+                self.save_auto(&config)?;
+                say(out, format!("Auto {what} for DNS is now {}.", on_off(on)))
+            }
+            DnsAutoCommand::PoolAdd(name) => {
+                let profiles = self.profiles()?;
+                let id = find_saved(
+                    profiles.dns_profiles().iter().map(|p| (p.id(), p.name())),
+                    &name,
+                )
+                .ok_or_else(|| CliError::failure(format!("no saved DNS profile `{name}`")))?;
+                if config.dns.add_to_pool(&id) {
+                    self.save_auto(&config)?;
+                    say(out, format!("Added `{id}` to the DNS pool."))
+                } else {
+                    say(out, format!("`{id}` is already in the DNS pool."))
+                }
+            }
+            DnsAutoCommand::PoolRemove(name) => {
+                let profiles = self.profiles()?;
+                // A deleted profile can still be removed by its id.
+                let id = find_saved(
+                    profiles.dns_profiles().iter().map(|p| (p.id(), p.name())),
+                    &name,
+                )
+                .unwrap_or_else(|| name.clone());
+                if config.dns.remove_from_pool(&id) {
+                    self.save_auto(&config)?;
+                    say(out, format!("Removed `{id}` from the DNS pool."))
+                } else {
+                    Err(CliError::failure(format!(
+                        "`{name}` is not in the DNS pool"
+                    )))
+                }
+            }
         }
     }
 
@@ -745,7 +918,28 @@ fn unknown(kind: &str, key: &str) -> CliError {
     ))
 }
 
-/// Finds what `proxy use <key>` means; the flag says the profile is not saved yet.
+/// What `proxy use <key>` resolved to.
+enum Resolved {
+    /// A group: the fastest live member is applied.
+    Group(ProxyGroup),
+    /// A plain proxy; the flag says it is not saved yet (a preset).
+    Proxy(ProxyProfile, bool),
+}
+
+/// Saved groups and proxies (by id, then name), then the presets.
+fn resolve_proxy_entry(profiles: &Profiles, key: &str) -> Result<Resolved, CliError> {
+    let everything = profiles
+        .proxy_profiles()
+        .iter()
+        .map(|p| (p.id(), p.name()))
+        .chain(profiles.groups().iter().map(|g| (g.id(), g.name())));
+    if let Some(group) = find_saved(everything, key).and_then(|id| profiles.group(&id)) {
+        return Ok(Resolved::Group(group.clone()));
+    }
+    resolve_proxy(profiles, key).map(|(profile, is_new)| Resolved::Proxy(profile, is_new))
+}
+
+/// Finds what `proxy use <key>` means for a plain proxy; the flag says the profile is not saved yet.
 fn resolve_proxy(profiles: &Profiles, key: &str) -> Result<(ProxyProfile, bool), CliError> {
     let saved = find_saved(
         profiles.proxy_profiles().iter().map(|p| (p.id(), p.name())),
@@ -763,7 +957,7 @@ fn resolve_proxy(profiles: &Profiles, key: &str) -> Result<(ProxyProfile, bool),
     {
         return Ok((existing.clone(), false));
     }
-    let id = unique_id(preset.id(), |id| profiles.proxy(id).is_some());
+    let id = unique_id(preset.id(), |id| profiles.proxy_entry(id).is_some());
     Ok((preset.to_profile(id).map_err(CliError::failure)?, true))
 }
 
@@ -808,7 +1002,7 @@ fn auto_run(ctx: &Context, once: bool, out: &mut dyn Write) -> Result<(), CliErr
         if !config.proxy.is_enabled() && !config.dns.is_enabled() {
             return say(
                 out,
-                "Auto connect and auto switch are both off for proxy and DNS; nothing to do. \
+                "Auto connect is off for proxy and DNS (or no proxy profile is selected); nothing to do. \
                  See `hopswitch auto status`.",
             );
         }
@@ -821,7 +1015,7 @@ fn auto_run(ctx: &Context, once: bool, out: &mut dyn Write) -> Result<(), CliErr
             &config,
         );
 
-        let events = tick_events(&report, &profiles);
+        let events = tick_events(&report, &profiles, config.proxy.selected.as_deref());
         if once || events.lines != last_lines {
             for line in &events.lines {
                 say(out, line)?;
@@ -849,7 +1043,7 @@ struct TickEvents {
     errors: usize,
 }
 
-fn tick_events(report: &TickReport, profiles: &Profiles) -> TickEvents {
+fn tick_events(report: &TickReport, profiles: &Profiles, selected: Option<&str>) -> TickEvents {
     let mut events = TickEvents {
         lines: Vec::new(),
         errors: 0,
@@ -864,8 +1058,18 @@ fn tick_events(report: &TickReport, profiles: &Profiles) -> TickEvents {
             .dns(id)
             .map_or_else(|| id.to_owned(), |p| p.name().to_owned())
     };
-    kind_events("proxy", &report.proxy, &proxy_name, &mut events);
-    kind_events("dns", &report.dns, &dns_name, &mut events);
+    // When the selected profile is a group, say which group the member was chosen for.
+    let via = selected
+        .and_then(|id| profiles.group(id))
+        .map(|g| format!(" via {}", g.name()));
+    kind_events(
+        "proxy",
+        &report.proxy,
+        &proxy_name,
+        via.as_deref(),
+        &mut events,
+    );
+    kind_events("dns", &report.dns, &dns_name, None, &mut events);
     events
 }
 
@@ -873,6 +1077,7 @@ fn kind_events(
     label: &str,
     report: &KindReport,
     name_of: &dyn Fn(&str) -> String,
+    via: Option<&str>,
     events: &mut TickEvents,
 ) {
     let line =
@@ -886,7 +1091,11 @@ fn kind_events(
                         Health::Dead => String::new(),
                     },
                 );
-                format!("{label}: now using {}{latency}", name_of(id))
+                format!(
+                    "{label}: now using {}{latency}{}",
+                    name_of(id),
+                    via.unwrap_or("")
+                )
             }
             (Decision::Activate(id), Some(error)) => {
                 format!("{label}: could not switch to {}: {error}", name_of(id))
@@ -902,20 +1111,6 @@ fn kind_events(
         events.errors += 1;
     }
     events.lines.push(line);
-}
-
-fn kind_mut(config: &mut AutoConfig, target: AutoTarget) -> &mut AutoKind {
-    match target {
-        AutoTarget::Proxy => &mut config.proxy,
-        AutoTarget::Dns => &mut config.dns,
-    }
-}
-
-fn target_name(target: AutoTarget) -> &'static str {
-    match target {
-        AutoTarget::Proxy => "proxy",
-        AutoTarget::Dns => "DNS",
-    }
 }
 
 fn on_off(on: bool) -> &'static str {

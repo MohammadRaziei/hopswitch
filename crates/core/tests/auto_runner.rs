@@ -1,20 +1,17 @@
-//! One round of auto connect / auto switch against in-memory fakes.
+//! One round of the automation against in-memory fakes: the proxy follows the
+//! selected profile (plain proxy or group), DNS follows its own pool.
 
 use std::sync::Arc;
 
 use hopswitch_core::testing::{FakeProber, InMemoryNetwork, InMemoryStore};
 use hopswitch_core::{
     AutoConfig, AutoRunner, Decision, DnsConfig, DnsProfile, DnsService, DnsState, Health,
-    Profiles, ProxyConfig, ProxyProfile, ProxyScheme, ProxyService, ProxyState, SystemError,
-    SystemNetwork,
+    Profiles, ProxyConfig, ProxyGroup, ProxyProfile, ProxyScheme, ProxyService, ProxyState,
+    SystemError, SystemNetwork, TickReport,
 };
 
 fn alive(ms: u32) -> Health {
     Health::Alive { latency_ms: ms }
-}
-
-fn proxy_config(host: &str) -> ProxyConfig {
-    ProxyConfig::new(ProxyScheme::Socks5, host, 1080).unwrap()
 }
 
 fn users_proxy() -> ProxyState {
@@ -28,16 +25,19 @@ struct World {
     profiles: Profiles,
 }
 
-/// Proxies `a`, `b`, `c` (hosts `a.test` ...) and DNS profile `cf` (1.1.1.1) are saved.
+/// Proxies `a`, `b`, `c` (hosts `a.test` ...), the group `smart` = [a, b], DNS profile `cf`.
 fn world() -> World {
     let net = Arc::new(InMemoryNetwork::new().with_proxy(users_proxy()));
     let mut profiles = Profiles::new();
     for id in ["a", "b", "c"] {
-        let config = proxy_config(&format!("{id}.test"));
+        let config = ProxyConfig::new(ProxyScheme::Socks5, &format!("{id}.test"), 1080).unwrap();
         profiles
             .add_proxy(ProxyProfile::new(id, id, config).unwrap())
             .unwrap();
     }
+    profiles
+        .add_group(ProxyGroup::new("smart", "Smart", ["a", "b"].map(String::from)).unwrap())
+        .unwrap();
     let cf = DnsProfile::new("cf", "cf", DnsConfig::from_strs(["1.1.1.1"]).unwrap()).unwrap();
     profiles.add_dns(cf).unwrap();
     World {
@@ -48,13 +48,10 @@ fn world() -> World {
     }
 }
 
-fn config(connect: bool, switch: bool, pool: &[&str]) -> AutoConfig {
+fn proxy_auto(selected: Option<&str>) -> AutoConfig {
     let mut config = AutoConfig::default();
-    config.proxy.connect = connect;
-    config.proxy.switch = switch;
-    for id in pool {
-        config.proxy.add_to_pool(id);
-    }
+    config.proxy.connect = true;
+    config.proxy.selected = selected.map(str::to_owned);
     config
 }
 
@@ -63,122 +60,110 @@ fn tick(
     runner: &mut AutoRunner,
     prober: &FakeProber,
     config: &AutoConfig,
-) -> hopswitch_core::TickReport {
+) -> TickReport {
     runner.tick(&mut w.proxy, &mut w.dns, prober, &w.profiles, config)
 }
 
-fn current_proxy_host(w: &World) -> Option<String> {
+fn proxy_host(w: &World) -> Option<String> {
     match w.net.read_proxy().unwrap() {
         ProxyState::Manual(c) => Some(c.host().to_owned()),
         _ => None,
     }
 }
 
+fn apply(w: &mut World, id: &str) {
+    w.proxy.activate(w.profiles.proxy(id).unwrap()).unwrap();
+}
+
+// ---------- when nothing should happen ----------
+
 #[test]
-fn disabled_kinds_cost_no_traffic_and_change_nothing() {
-    let mut w = world();
+fn without_the_flag_or_a_selection_nothing_is_probed() {
     let prober = FakeProber::new().with_proxy("socks5://a.test:1080", alive(10));
+
+    let mut flag_off = world();
+    let mut config = proxy_auto(Some("a"));
+    config.proxy.connect = false;
+    tick(&mut flag_off, &mut AutoRunner::new(), &prober, &config);
+
+    let mut nothing_selected = world();
+    tick(
+        &mut nothing_selected,
+        &mut AutoRunner::new(),
+        &prober,
+        &proxy_auto(None),
+    );
+
+    assert!(prober.calls().is_empty());
+    assert_eq!(
+        flag_off.net.proxy_write_count() + nothing_selected.net.proxy_write_count(),
+        0
+    );
+}
+
+#[test]
+fn a_selection_that_no_longer_exists_does_nothing() {
+    let mut w = world();
+    let prober = FakeProber::new();
 
     let report = tick(
         &mut w,
         &mut AutoRunner::new(),
         &prober,
-        &config(false, false, &["a"]),
+        &proxy_auto(Some("ghost")),
     );
 
     assert_eq!(report.proxy.decision, Decision::Keep);
-    assert_eq!(report.dns.decision, Decision::Keep);
     assert!(prober.calls().is_empty());
-    assert_eq!(w.net.proxy_write_count(), 0);
 }
 
+// ---------- a plain proxy is selected ----------
+
 #[test]
-fn connect_applies_the_first_live_profile_of_the_pool() {
+fn a_selected_proxy_is_connected_when_it_answers() {
     let mut w = world();
     let prober = FakeProber::new()
-        .with_proxy("socks5://b.test:1080", alive(80))
-        .with_proxy("socks5://c.test:1080", alive(20));
+        .with_proxy("socks5://b.test:1080", alive(50))
+        .with_proxy("socks5://a.test:1080", alive(10));
 
     let report = tick(
         &mut w,
         &mut AutoRunner::new(),
         &prober,
-        &config(true, false, &["a", "b", "c"]),
+        &proxy_auto(Some("b")),
     );
 
     assert_eq!(report.proxy.decision, Decision::Activate("b".into()));
-    assert_eq!(report.proxy.error, None);
-    assert_eq!(current_proxy_host(&w).as_deref(), Some("b.test"));
-}
-
-#[test]
-fn profiles_outside_the_pool_and_unknown_ids_are_ignored() {
-    let mut w = world();
-    let prober = FakeProber::new()
-        .with_proxy("socks5://a.test:1080", alive(5))
-        .with_proxy("socks5://c.test:1080", alive(50));
-
-    let report = tick(
-        &mut w,
-        &mut AutoRunner::new(),
-        &prober,
-        &config(true, true, &["ghost", "c"]),
-    );
-
-    assert_eq!(report.proxy.decision, Decision::Activate("c".into()));
     assert_eq!(
         report.proxy.probes.len(),
         1,
-        "only the existing pool member is probed"
+        "only the selected proxy is tested"
     );
+    assert_eq!(proxy_host(&w).as_deref(), Some("b.test"));
 }
 
 #[test]
-fn switch_moves_an_active_profile_to_a_clearly_faster_one() {
+fn a_selected_proxy_that_does_not_answer_is_not_connected() {
     let mut w = world();
-    w.proxy.activate(w.profiles.proxy("a").unwrap()).unwrap();
-    let prober = FakeProber::new()
-        .with_proxy("socks5://a.test:1080", alive(400))
-        .with_proxy("socks5://b.test:1080", alive(60));
 
     let report = tick(
         &mut w,
         &mut AutoRunner::new(),
-        &prober,
-        &config(false, true, &["a", "b"]),
-    );
-
-    assert_eq!(report.proxy.decision, Decision::Activate("b".into()));
-    assert_eq!(current_proxy_host(&w).as_deref(), Some("b.test"));
-}
-
-#[test]
-fn a_profile_chosen_by_hand_outside_the_pool_is_left_alone() {
-    let mut w = world();
-    w.proxy.activate(w.profiles.proxy("c").unwrap()).unwrap();
-    let prober = FakeProber::new().with_proxy("socks5://a.test:1080", alive(1));
-
-    let report = tick(
-        &mut w,
-        &mut AutoRunner::new(),
-        &prober,
-        &config(true, true, &["a", "b"]),
+        &FakeProber::new(),
+        &proxy_auto(Some("a")),
     );
 
     assert_eq!(report.proxy.decision, Decision::Keep);
-    assert_eq!(current_proxy_host(&w).as_deref(), Some("c.test"));
+    assert_eq!(w.net.read_proxy().unwrap(), users_proxy());
 }
 
 #[test]
-fn giving_up_needs_a_streak_unless_the_runner_is_decisive() {
-    let cfg = config(true, false, &["a"]);
+fn a_selected_proxy_is_given_up_only_after_a_streak_unless_decisive() {
+    let cfg = proxy_auto(Some("a"));
     let nothing = FakeProber::new();
 
     let mut patient = world();
-    patient
-        .proxy
-        .activate(patient.profiles.proxy("a").unwrap())
-        .unwrap();
+    apply(&mut patient, "a");
     let mut runner = AutoRunner::new();
     assert_eq!(
         tick(&mut patient, &mut runner, &nothing, &cfg)
@@ -205,12 +190,140 @@ fn giving_up_needs_a_streak_unless_the_runner_is_decisive() {
     );
 
     let mut quick = world();
-    quick
-        .proxy
-        .activate(quick.profiles.proxy("a").unwrap())
-        .unwrap();
+    apply(&mut quick, "a");
     let report = tick(&mut quick, &mut AutoRunner::decisive(), &nothing, &cfg);
     assert_eq!(report.proxy.decision, Decision::Deactivate);
+}
+
+#[test]
+fn a_selected_proxy_never_hops_to_a_faster_one() {
+    let mut w = world();
+    apply(&mut w, "a");
+    let prober = FakeProber::new()
+        .with_proxy("socks5://a.test:1080", alive(900))
+        .with_proxy("socks5://c.test:1080", alive(5));
+
+    let report = tick(
+        &mut w,
+        &mut AutoRunner::new(),
+        &prober,
+        &proxy_auto(Some("a")),
+    );
+
+    assert_eq!(report.proxy.decision, Decision::Keep);
+}
+
+#[test]
+fn a_profile_applied_by_hand_that_is_not_selected_is_left_alone() {
+    let mut w = world();
+    apply(&mut w, "c");
+    let prober = FakeProber::new().with_proxy("socks5://a.test:1080", alive(1));
+
+    for _ in 0..4 {
+        let report = tick(
+            &mut w,
+            &mut AutoRunner::new(),
+            &prober,
+            &proxy_auto(Some("a")),
+        );
+        assert_eq!(report.proxy.decision, Decision::Keep);
+    }
+    assert_eq!(proxy_host(&w).as_deref(), Some("c.test"));
+}
+
+// ---------- a group is selected ----------
+
+#[test]
+fn a_selected_group_connects_to_its_fastest_live_member() {
+    let mut w = world();
+    let prober = FakeProber::new()
+        .with_proxy("socks5://a.test:1080", alive(80))
+        .with_proxy("socks5://b.test:1080", alive(20))
+        .with_proxy("socks5://c.test:1080", alive(1));
+
+    let report = tick(
+        &mut w,
+        &mut AutoRunner::new(),
+        &prober,
+        &proxy_auto(Some("smart")),
+    );
+
+    assert_eq!(report.proxy.decision, Decision::Activate("b".into()));
+    assert_eq!(report.proxy.probes.len(), 2, "c is not a member");
+    assert_eq!(proxy_host(&w).as_deref(), Some("b.test"));
+}
+
+#[test]
+fn a_selected_group_moves_to_a_clearly_faster_member_but_not_a_slightly_faster_one() {
+    let mut w = world();
+    apply(&mut w, "a");
+    let cfg = proxy_auto(Some("smart"));
+
+    let slight = FakeProber::new()
+        .with_proxy("socks5://a.test:1080", alive(100))
+        .with_proxy("socks5://b.test:1080", alive(80));
+    assert_eq!(
+        tick(&mut w, &mut AutoRunner::new(), &slight, &cfg)
+            .proxy
+            .decision,
+        Decision::Keep
+    );
+
+    let clear = FakeProber::new()
+        .with_proxy("socks5://a.test:1080", alive(400))
+        .with_proxy("socks5://b.test:1080", alive(60));
+    assert_eq!(
+        tick(&mut w, &mut AutoRunner::new(), &clear, &cfg)
+            .proxy
+            .decision,
+        Decision::Activate("b".into())
+    );
+}
+
+#[test]
+fn a_selected_group_fails_over_then_disconnects_when_nothing_answers() {
+    let cfg = proxy_auto(Some("smart"));
+
+    let mut failover = world();
+    apply(&mut failover, "a");
+    let only_b = FakeProber::new().with_proxy("socks5://b.test:1080", alive(300));
+    let mut runner = AutoRunner::new();
+    tick(&mut failover, &mut runner, &only_b, &cfg);
+    tick(&mut failover, &mut runner, &only_b, &cfg);
+    assert_eq!(
+        tick(&mut failover, &mut runner, &only_b, &cfg)
+            .proxy
+            .decision,
+        Decision::Activate("b".into())
+    );
+
+    let mut dead = world();
+    apply(&mut dead, "a");
+    let mut runner = AutoRunner::new();
+    let nothing = FakeProber::new();
+    tick(&mut dead, &mut runner, &nothing, &cfg);
+    tick(&mut dead, &mut runner, &nothing, &cfg);
+    assert_eq!(
+        tick(&mut dead, &mut runner, &nothing, &cfg).proxy.decision,
+        Decision::Deactivate
+    );
+    assert_eq!(dead.net.read_proxy().unwrap(), users_proxy());
+}
+
+// ---------- DNS and independence ----------
+
+#[test]
+fn dns_still_follows_its_own_pool_and_options() {
+    let mut w = world();
+    let prober = FakeProber::new().with_dns("1.1.1.1", alive(20));
+    let mut config = AutoConfig::default();
+    config.dns.connect = true;
+    config.dns.add_to_pool("cf");
+
+    let report = tick(&mut w, &mut AutoRunner::new(), &prober, &config);
+
+    assert_eq!(report.dns.decision, Decision::Activate("cf".into()));
+    assert_eq!(report.proxy.decision, Decision::Keep);
 }
 
 #[test]
@@ -221,14 +334,14 @@ fn a_failure_in_one_kind_does_not_stop_the_other() {
     let prober = FakeProber::new()
         .with_proxy("socks5://a.test:1080", alive(30))
         .with_dns("1.1.1.1", alive(20));
-    let mut cfg = config(true, false, &["a"]);
-    cfg.dns.connect = true;
-    cfg.dns.add_to_pool("cf");
+    let mut config = proxy_auto(Some("a"));
+    config.dns.connect = true;
+    config.dns.add_to_pool("cf");
 
-    let report = tick(&mut w, &mut AutoRunner::new(), &prober, &cfg);
+    let report = tick(&mut w, &mut AutoRunner::new(), &prober, &config);
 
     assert_eq!(report.proxy.error, None);
-    assert_eq!(current_proxy_host(&w).as_deref(), Some("a.test"));
+    assert_eq!(proxy_host(&w).as_deref(), Some("a.test"));
     assert_eq!(report.dns.decision, Decision::Activate("cf".into()));
     assert!(
         report

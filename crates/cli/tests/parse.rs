@@ -1,7 +1,7 @@
 //! Tests for command-line parsing.
 
 use hopswitch_cli::{
-    parse, AutoCommand, AutoOption, AutoTarget, CliError, Command, DnsCommand, PingOptions,
+    parse, AutoCommand, AutoOption, CliError, Command, DnsAutoCommand, DnsCommand, PingOptions,
     PingScope, ProxyCommand,
 };
 
@@ -201,6 +201,21 @@ fn ping_rejects_malformed_input() {
     }
 }
 
+// ---------- groups ----------
+
+#[test]
+fn a_group_is_added_with_a_name_and_at_least_one_member() {
+    assert_eq!(
+        p(&["proxy", "add-group", "Smart", "a", "b"]).unwrap(),
+        Command::Proxy(ProxyCommand::AddGroup {
+            name: "Smart".into(),
+            members: vec!["a".into(), "b".into()]
+        })
+    );
+    assert!(is_usage(&p(&["proxy", "add-group", "Smart"])));
+    assert!(is_usage(&p(&["proxy", "add-group"])));
+}
+
 // ---------- auto ----------
 
 fn auto(args: &[&str]) -> Result<AutoCommand, CliError> {
@@ -223,40 +238,40 @@ fn auto_status_and_run() {
 }
 
 #[test]
-fn auto_toggles_name_the_kind_the_option_and_the_state() {
+fn the_proxy_only_has_an_auto_connect_flag() {
     assert_eq!(
         auto(&["proxy", "connect", "on"]).unwrap(),
-        AutoCommand::Toggle {
-            target: AutoTarget::Proxy,
-            option: AutoOption::Connect,
-            on: true
-        }
+        AutoCommand::ProxyConnect { on: true }
     );
     assert_eq!(
-        auto(&["dns", "switch", "off"]).unwrap(),
-        AutoCommand::Toggle {
-            target: AutoTarget::Dns,
-            option: AutoOption::Switch,
-            on: false
-        }
+        auto(&["proxy", "connect", "off"]).unwrap(),
+        AutoCommand::ProxyConnect { on: false }
     );
 }
 
 #[test]
-fn auto_pool_add_and_remove() {
+fn dns_keeps_its_options_and_pool() {
     assert_eq!(
-        auto(&["proxy", "pool", "add", "Work"]).unwrap(),
-        AutoCommand::PoolAdd {
-            target: AutoTarget::Proxy,
-            name: "Work".into()
-        }
+        auto(&["dns", "connect", "on"]).unwrap(),
+        AutoCommand::Dns(DnsAutoCommand::Toggle {
+            option: AutoOption::Connect,
+            on: true
+        })
+    );
+    assert_eq!(
+        auto(&["dns", "switch", "off"]).unwrap(),
+        AutoCommand::Dns(DnsAutoCommand::Toggle {
+            option: AutoOption::Switch,
+            on: false
+        })
+    );
+    assert_eq!(
+        auto(&["dns", "pool", "add", "Cf"]).unwrap(),
+        AutoCommand::Dns(DnsAutoCommand::PoolAdd("Cf".into()))
     );
     assert_eq!(
         auto(&["dns", "pool", "remove", "cf"]).unwrap(),
-        AutoCommand::PoolRemove {
-            target: AutoTarget::Dns,
-            name: "cf".into()
-        }
+        AutoCommand::Dns(DnsAutoCommand::PoolRemove("cf".into()))
     );
 }
 
@@ -285,7 +300,7 @@ fn auto_set_takes_any_mix_of_options() {
 }
 
 #[test]
-fn auto_rejects_malformed_input() {
+fn auto_rejects_malformed_input_and_the_removed_proxy_options() {
     for args in [
         &[][..],
         &["status", "now"],
@@ -296,12 +311,27 @@ fn auto_rejects_malformed_input() {
         &["proxy"],
         &["proxy", "connect"],
         &["proxy", "connect", "maybe"],
-        &["proxy", "speed", "on"],
-        &["proxy", "pool"],
-        &["proxy", "pool", "add"],
-        &["proxy", "pool", "list", "x"],
+        // the proxy follows the selected profile now: no switch, no pool
+        &["proxy", "switch", "on"],
+        &["proxy", "pool", "add", "x"],
+        &["proxy", "pool", "remove", "x"],
+        &["dns"],
+        &["dns", "speed", "on"],
+        &["dns", "pool"],
+        &["dns", "pool", "add"],
+        &["dns", "pool", "list", "x"],
         &["tor", "connect", "on"],
     ] {
         assert!(is_usage(&p(&[&["auto"][..], args].concat())), "{args:?}");
     }
+}
+
+#[test]
+fn the_message_for_a_removed_proxy_option_points_to_the_new_way() {
+    let message = match p(&["auto", "proxy", "switch", "on"]) {
+        Err(CliError::Usage(message)) => message,
+        other => panic!("{other:?}"),
+    };
+
+    assert!(message.contains("proxy use"), "{message}");
 }

@@ -8,8 +8,7 @@ use hopswitch_storage::JsonFileAutoStore;
 fn sample() -> AutoConfig {
     let mut config = AutoConfig::default();
     config.proxy.connect = true;
-    config.proxy.add_to_pool("محل-کار");
-    config.proxy.add_to_pool("clash");
+    config.proxy.selected = Some("smart".to_owned());
     config.dns.switch = true;
     config.dns.add_to_pool("cloudflare");
     config.connectivity =
@@ -52,8 +51,9 @@ fn the_file_is_versioned() {
 
     let value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
 
-    assert_eq!(value["version"], 1);
-    assert_eq!(value["proxy"]["pool"][1], "clash");
+    assert_eq!(value["version"], 2);
+    assert_eq!(value["proxy"]["selected"], "smart");
+    assert_eq!(value["dns"]["pool"][0], "cloudflare");
 }
 
 #[test]
@@ -98,12 +98,29 @@ fn a_missing_or_newer_version_is_refused() {
         Err(AutoConfigError::Corrupt(_))
     ));
 
-    fs::write(&path, br#"{"version":2}"#).unwrap();
+    fs::write(&path, br#"{"version":3}"#).unwrap();
     assert_eq!(
         JsonFileAutoStore::new(&path).load(),
         Err(AutoConfigError::UnsupportedVersion {
-            found: 2,
-            supported: 1
+            found: 3,
+            supported: 2
         })
     );
+}
+
+#[test]
+fn a_version_1_file_still_loads_and_its_proxy_pool_is_dropped() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auto.json");
+    fs::write(
+        &path,
+        r#"{"version":1,"proxy":{"connect":true,"switch":true,"pool":["a","b"]},"dns":{"connect":true,"pool":["cf"]}}"#,
+    )
+    .unwrap();
+
+    let config = JsonFileAutoStore::new(&path).load().unwrap();
+
+    assert!(config.proxy.connect);
+    assert_eq!(config.proxy.selected, None);
+    assert_eq!(config.dns.pool, ["cf"]);
 }

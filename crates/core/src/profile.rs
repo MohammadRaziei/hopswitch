@@ -10,7 +10,7 @@ use crate::{DnsConfig, ProxyConfig, ValidationError};
 pub const MAX_NAME_CHARS: usize = 64;
 
 /// Validates the identity shared by every profile kind; returns `(id, trimmed name)`.
-fn validate_identity(
+pub(crate) fn validate_identity(
     id: impl Into<String>,
     name: &str,
 ) -> Result<(String, String), ValidationError> {

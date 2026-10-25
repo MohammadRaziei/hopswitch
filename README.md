@@ -20,7 +20,9 @@ Early development; see [`CHECKLIST.md`](CHECKLIST.md) for the full plan and [`HA
 | Domain model, proxy/DNS services, presets, persistence | done |
 | Windows proxy adapter | done, verified on a real runner by CI (`windows-proxy-smoke`) |
 | Command line (`hopswitch`) | done |
-| Connectivity test (`hopswitch ping`) and auto connect / auto switch (`hopswitch auto`) | done |
+| Connectivity test (`hopswitch ping`), auto connect, proxy groups ("fastest of ...") | done |
+| Domain rules (per-domain profiles, PAC) | planned (ADR-0010 phase 2) |
+| Per-app profiles | undecided: needs a local router (ADR-0010) |
 | Windows DNS adapter (needs administrator rights) | planned |
 | macOS and Linux adapters | planned |
 | Desktop UI and tray (Tauri) | planned |
@@ -35,9 +37,10 @@ hopswitch status                         # what is active right now
 hopswitch ping                           # test every saved profile and show latency
 hopswitch off                            # restore the original proxy and DNS
 
-hopswitch auto proxy pool add work       # take part in auto mode
-hopswitch auto proxy connect on          # connect when something answers, disconnect when not
-hopswitch auto proxy switch on           # stay on the fastest profile of the pool
+hopswitch proxy add-group smart a b c    # a group: the fastest live member of a, b, c
+hopswitch proxy use smart                # apply it (and select it for auto connect)
+hopswitch auto proxy connect on          # keep me connected to the selected profile;
+                                         # a group moves to its fastest member and fails over
 hopswitch auto run                       # apply the auto settings (Ctrl-C to stop)
 ```
 

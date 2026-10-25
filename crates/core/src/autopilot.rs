@@ -203,8 +203,8 @@ fn first_alive(probes: &[Probe]) -> Option<(&Probe, u32)> {
         .find_map(|p| alive_latency(p).map(|ms| (p, ms)))
 }
 
-/// The live profile with the lowest latency; the earlier one wins a tie.
-fn fastest_alive(probes: &[Probe]) -> Option<(&Probe, u32)> {
+/// The live probe with the lowest latency and that latency; the earlier probe wins a tie.
+pub fn fastest_alive(probes: &[Probe]) -> Option<(&Probe, u32)> {
     probes
         .iter()
         .filter_map(|p| alive_latency(p).map(|ms| (p, ms)))

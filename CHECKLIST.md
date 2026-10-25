@@ -69,6 +69,15 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] 38 tests (parser, settings folder, end-to-end behaviour against an in-memory system + temp dir)
 - [ ] Manual check on a real Windows machine: `hopswitch proxy use v2rayn-socks`, `hopswitch off`
 
+### 🟨 Step 7d — Profile kinds, SwitchyOmega-style (ADR-0010)
+- [x] Phase 1: `ProxyGroup` ("fastest of ...", members = plain proxies only, so no cycles), integrity in `Profiles` (members exist, one id namespace, a proxy in use by a group cannot be removed), schema 2 for `profiles.json` (version 1 still loads)
+- [x] Auto connect is a plain flag + the *selected* profile (`proxy use` selects); a group follows its fastest member with hysteresis and failover; proxy `switch` / pool removed, DNS keeps its own; `auto.json` schema 2
+- [x] A manual disconnect (`proxy off`, `dns off`, `off`) turns auto connect off for that kind and says so
+- [x] CLI: `proxy add-group`, `proxy use <group>`, groups in `proxy list` / `ping` / `status` (`via <group>`)
+- [ ] Phase 2: per-domain rules via a generated PAC served from a local HTTP endpoint; needs a first-class PAC state in `ProxyState` (the Windows adapter reports PAC as "other" today) and a `Direct` profile
+- [ ] Phase 3: per-app. Not decided; needs a local router (changes what the product is) or the cheap "launch a program with the proxy" alternative. Own ADR first.
+- [ ] UI: profile editor for the kinds, the group picker, the auto connect checkbox next to the selected profile
+
 ### 🟨 Step 4b — Windows restore fidelity (found by the CI smoke job)
 - [ ] After `apply` + `off` the proxy is off again, but `ProxyServer` keeps the text Hopswitch wrote (`socks=127.0.0.1:10808`) when the original had none, and a user's own leftover server text (proxy switched off, address still stored) is also replaced. Cause: `ProxyState::Disabled` carries no payload, and `plan_write(Disabled)` only writes `ProxyEnable=0` (deliberate: a failed apply must not delete a leftover). Harmless in effect (nothing is proxied), but not an exact restore. Needs an ADR: let the snapshot keep the raw registry values (e.g. `Disabled` with the leftover text) and restore them exactly.
 

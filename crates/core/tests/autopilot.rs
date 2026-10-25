@@ -208,3 +208,20 @@ fn reconfiguring_keeps_the_failure_streak() {
 
     assert_eq!(p.observe(Some("a"), &[dead("a")]), Decision::Deactivate);
 }
+
+// ---------- picking the fastest ----------
+
+#[test]
+fn the_fastest_live_probe_wins_and_ties_go_to_the_earlier_one() {
+    let probes = [dead("a"), alive("b", 50), alive("c", 20), alive("d", 20)];
+
+    let (winner, latency) = hopswitch_core::fastest_alive(&probes).unwrap();
+
+    assert_eq!((winner.id.as_str(), latency), ("c", 20));
+}
+
+#[test]
+fn nothing_is_fastest_when_everything_is_dead() {
+    assert!(hopswitch_core::fastest_alive(&[dead("a"), dead("b")]).is_none());
+    assert!(hopswitch_core::fastest_alive(&[]).is_none());
+}
