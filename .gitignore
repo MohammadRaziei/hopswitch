@@ -10,3 +10,6 @@ src-tauri/gen/
 # tools/pac-bench: downloaded lists and generated PAC files
 /data/
 /build/
+
+__pycache__/
+*.pyc

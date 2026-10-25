@@ -1,127 +1,318 @@
-# HANDOFF — Hopswitch (state at 2026-10-24, Steps 7b-7d done except the Tauri loop + UI; 345 tests green)
+# HANDOFF — Hopswitch (state at 2026-10-25, HEAD `b94f182`, 354 tests green)
 
-> **Paste-in starter for the new chat (the user writes Persian, informal):**
+> **Paste-in starter for the new chat** (the user writes Persian, informal; attach the project zip,
+> this file, and the CI results described in §8):
+>
 > «سلام! پروژه‌ی Hopswitch رو از چت قبلی ادامه می‌دیم. zip پروژه و HANDOFF.md پیوست شده.
-> اول `HANDOFF.md`, `AGENT.md`, `CHECKLIST.md` و `docs/adr/*` رو بخون، بعد `crates/cli/src/app.rs` رو با TDD تموم کنیم (بخش ۵).»
-> Reply in Persian (casual, friendly); code, comments and docs stay in English.
+> اول `HANDOFF.md`، `AGENT.md`، `CHECKLIST.md` و `docs/adr/*` رو بخون. بعد نتیجه‌ی آخرین اجرای CI و
+> جدول workflow «PAC benchmark» رو که پایین فرستادم بررسی کن و طبق بخش ۹ ادامه بده.»
+>
+> Reply in Persian (casual, friendly). Code, comments, commit messages and docs stay in English.
 
-## 1. What this project is
+---
 
-**Hopswitch**: cross-platform (Windows / macOS / Linux) desktop **client** that switches the **system proxy**
-and **system DNS** between saved entries, from a modern UI and a tray menu. It runs/ships no proxy server;
-it only points the OS at one the user already has (think `all_proxy`, but system-wide, with on/off + restore).
-Stack: **Tauri 2 (Rust)** + React/TypeScript/Tailwind frontend. Chosen over Flutter (ADR-0001).
+## 0. The 60-second version
 
-## 2. How the user wants to work (important)
+* **Hopswitch** = a cross-platform desktop **client** that switches the **system proxy** and **system DNS**
+  between saved profiles (tray + UI planned). It never runs or ships a proxy server.
+* **Built and tested (pure Rust, 354 tests):** domain model, services with exact snapshot/restore,
+  JSON persistence, Windows proxy adapter, a real connectivity prober (DNS / HTTP / SOCKS), auto connect +
+  proxy groups ("fastest of ..."), and a full **CLI** (`hopswitch`). **Not built:** the Tauri shell and UI,
+  Windows DNS (needs admin), macOS and Linux adapters, per-domain rules.
+* **Waiting on the user (see §8):** the result of the newest CI run and of the manual `PAC benchmark`
+  workflow (real Windows PAC engine). The latter decides how ADR-0011 phase 2 (domain rules) is built.
+* **Process is strict:** TDD (red seen before green), quality gate before every commit, conventional
+  commits, zip the whole project after every step (`present_files`).
 
-- Step by step, together, **strict TDD**: write failing tests first, *run them and see red*, then implement, then green, then refactor.
-- Clean, professional, idiomatic code; clean folder structure; `AGENT.md` and `CHECKLIST.md` live in the repo.
-- **After every step or commit: zip the whole project and send it** (`present_files`). Exclude `target/`. Name like `hopswitch-step-NN.zip`; delete the previous zip.
-- Conventional Commits. One checklist step ≈ one commit.
-- Wants a *modern, polished UI with good UX*; will give design feedback later himself. Delegates small design choices ("whatever is better") but expects a stated reason.
-- **His main fear:** on Linux, touching `/etc/resolv.conf` could wipe the user's existing entries. Already addressed by `managed_block` + ADR-0003. Keep honouring it (see AGENT.md rule 7).
+---
 
-## 3. Repository state
+## 1. What the project is
 
-Location in the old sandbox: `/home/claude/hopswitch` (sandbox resets; **the zip is the source of truth**, `.git` is inside it).
+* Windows / macOS / Linux client. Stack: **Tauri 2 (Rust)** + React/TypeScript/Tailwind (ADR-0001).
+  Core logic is pure Rust with no OS or Tauri imports; OS access only behind traits (`SystemNetwork`,
+  `CommandRunner`, `Prober`, stores).
+* Main audience: Iranian users who need (a) local sites direct while everything else goes through a
+  proxy, (b) sanction-bypass for developer services, (c) one-click proxy/DNS switching with a guaranteed
+  restore of the original settings.
+* The user's biggest fear is damaging existing system settings (e.g. wiping `/etc/resolv.conf` entries).
+  That is why every change is preceded by a persisted snapshot and `off` restores *exactly*; foreign
+  system files are only edited through `core::managed_block` (ADR-0003, AGENT.md rule 7).
+
+## 2. How the user works (read this twice)
+
+* Writes Persian, informal. Often delegates ("تصمیمش با خودته", "شما استادی برو جلو"), but expects the
+  reasons for decisions to be stated, and he *does* push back when something is off (he corrected the
+  colour theme and the FOD licensing stance; both corrections were right).
+* Pastes **CI logs from GitHub** after pushing. He pushes himself; the assistant has no push access.
+  His GitHub history is **not identical** to the zip's `.git` (his commit messages differ, e.g. "chore: add
+  CI workflow..." / "feat: implement PAC benchmark workflow..."): treat the **zip's working tree as the
+  source of truth** and expect him to copy files over his clone.
+* Wants: step-by-step work, **strict TDD**, clean idiomatic code, `CHECKLIST.md` ticked, the project zipped
+  and delivered after every step (name `hopswitch-step-NN.zip`, delete the previous zip, exclude
+  `target/`), research done with real sources instead of guesses, honest statements of what is *not*
+  verified.
+* UI taste: modern, polished, dark-first, RTL/Persian first-class. He will give design feedback himself.
+* His OS was never confirmed; CI covers Windows, macOS and Linux.
+
+## 3. Repository map
 
 ```
 hopswitch/
-├── AGENT.md  CHECKLIST.md  README.md  HANDOFF.md
-├── Cargo.toml            # workspace; lints: unsafe_code=forbid, missing_docs=warn, clippy pedantic
-├── rustfmt.toml          # max_width = 100
-├── crates/core/          # package `hopswitch-core`, pure Rust, no Tauri/OS imports
-│   ├── src/{lib,error,proxy,dns,profile,profiles,network,session,service,repository,testing,managed_block}.rs
-│   └── tests/*.rs        # public-API tests
-├── crates/storage/       # package `hopswitch-storage`: write_atomic, JsonFileRepository, JsonFileSessionStore
-│   └── tests/{atomic,repository,session_store}.rs   # temp-dir tests
-├── crates/platform-windows/  # package `hopswitch-platform-windows`: WindowsNetwork (proxy), ProcessRunner
-│   ├── src/{lib,registry,runner,network}.rs   # registry = pure parse/plan/render
-│   ├── tests/proxy.rs                         # 31 tests via FakeRunner
-│   └── examples/proxy_smoke.rs                # real-machine check (read / apply / restore)
-├── crates/cli/           # package `hopswitch-cli`, binary `hopswitch` — WORK IN PROGRESS, NOT A WORKSPACE MEMBER (see §5)
-├── design/               # README + static UI mockups (design/preview/*.dc.html, canvas.json)
-└── docs/{ARCHITECTURE.md, adr/0001..0004}
+├── AGENT.md  CHECKLIST.md  README.md  HANDOFF.md      # rules, roadmap, public README, this file
+├── Cargo.toml        # workspace; rust-version = "1.75"; lints: unsafe_code=forbid, missing_docs=warn, clippy pedantic
+├── rustfmt.toml      # max_width = 100
+├── crates/
+│   ├── core/             # hopswitch-core: pure Rust domain + services + ports (166 tests)
+│   │   └── src/ auto_config auto_runner autopilot connectivity dns error group managed_block network
+│   │            presets prober profile profiles proxy repository service session testing
+│   ├── storage/          # hopswitch-storage: write_atomic, JsonFileRepository, JsonFileSessionStore, JsonFileAutoStore (40)
+│   ├── platform-windows/ # hopswitch-platform-windows: WindowsNetwork (proxy via registry + WinINet), ProcessRunner;
+│   │                     #   `pub mod registry` = pure parse/plan/render (36 tests + examples/proxy_smoke.rs)
+│   ├── probe/            # hopswitch-probe: NetProber, std only: DNS A query over UDP, HTTP through HTTP/SOCKS4a/SOCKS5 (22)
+│   └── cli/              # hopswitch-cli, binary `hopswitch`: command.rs (parser) + app.rs (behaviour) (90)
+├── tools/pac-bench/      # spike for ADR-0011: make_pac.py, verify_local.py, bench.ps1, README.md
+├── design/               # README, preview/*.dc.html (UI mockups, canvas.json), logo/ (SVG sources + build.py + export/)
+├── docs/                 # ARCHITECTURE.md, adr/0001 … 0011
+└── .github/workflows/    # ci.yml (lint, test x3 OS, msrv, windows-proxy-smoke), pac-bench.yml (manual)
 ```
 
-Git history: domain model → rename → `managed_block` → UI direction → handoff → Steps 2, 3, 3b, 4. HEAD = `7a75f7d feat(platform-windows): ...`. **Uncommitted:** `crates/cli/` (new, unfinished) and the `Cargo.toml`/`Cargo.lock` changes.
+Tests live in `crates/*/tests/` (public API). Per-crate counts above sum to 354.
 
-**Tests: 165 passing at the last green gate** (core 104, storage 30, platform-windows 31), run *before* the CLI crate was added. The CLI crate has never been compiled. Quality gate (must pass before every commit):
+## 4. Domain model and the invariants that matter
 
-```bash
-cargo fmt --all --check
-cargo clippy --all-targets -- -D warnings
-cargo test
+* **Validated types, "parse, don't validate".** `ProxyConfig`, `DnsConfig`, `ProxyProfile`, `DnsProfile`,
+  `ProxyGroup`, `Profiles`, `ConnectivitySettings` can only be built valid, including through `serde`
+  (`try_from` DTOs). Never add a public constructor/field that bypasses this.
+* **`ProxyState`** = what the system really had: `Disabled` (nothing switched on **and nothing stored**),
+  `Manual(ProxyConfig)`, `Other { raw, enabled }` (anything else, restored value for value; `enabled`
+  says whether it routes traffic; old sessions without the flag read as `true`).
+  **`DnsState`** = `Automatic`, `Manual(DnsConfig)`, `Other { raw }`.
+* **Services** (`NetworkService<K>`, i.e. `ProxyService` / `DnsService`): snapshot persisted *before* the
+  first change; activate / switch A→B keeps the original; idempotent; `deactivate` restores exactly;
+  failed apply rolls back; `resume` after restart; `restore_all`. Proxy and DNS are independent.
+* **Profiles** (`profiles.json`, schema 2): `proxies`, `groups`, `dns`. Proxy and group ids share **one
+  namespace**; a group's members are **plain proxies only** (no cycles possible); members must exist; a proxy
+  used by a group cannot be removed (`ProfilesError::InUse`). Version-1 files still load; an older build
+  refuses a version-2 file instead of dropping groups.
+* **Auto settings** (`auto.json`, schema 2): `proxy = { connect: bool, selected: Option<id> }` (a plain flag +
+  the selected profile, set by `proxy use`), `dns = { connect, switch, pool }`, `connectivity` (probe URL,
+  DNS domain, timeout 500–10 000 ms, interval 5–3600 s; defaults `http://cp.cloudflare.com/generate_204`,
+  `example.com`, 3000 ms, 30 s).
+* **Decision engine** (`Autopilot`, pure): given the active id and probe results, returns
+  `Keep | Activate(id) | Deactivate`. Defaults: give up on a profile after **3 failures in a row**; switch only
+  for a gain of **≥ 50 ms and ≥ 20 %**; connect-only picks the first live profile in list order, with switch the
+  fastest. A profile applied by hand and not in the pool is never touched.
+* **`AutoRunner::tick`**: proxy follows the *selected* profile (plain proxy → connect while it answers,
+  disconnect after repeated failures; group → fastest live member, switch with hysteresis, failover, disconnect
+  when none answers). DNS follows its own options + pool. A failure in one kind never blocks the other. A kind
+  that is off sends **no traffic**. `AutoRunner::decisive()` (used by `auto run --once`) gives up after one failure.
+* **Manual disconnect wins over automation:** `proxy off`, `dns off`, `off` turn auto connect off for the kind
+  that was disconnected and print a note (otherwise `auto run` would undo the user's click). The selection is kept.
+* **Probes are real tests, never ICMP:** proxy = HTTP request *through* it; DNS = real query sent to the server.
+  A DNS profile's latency = its fastest live server. `https://` targets only test that the tunnel opens (no TLS).
+  A TLS proxy (`https://` scheme) is reported dead (unsupported).
+* **Presets** (pure data in core): 6 DNS (Cloudflare, Google, Quad9, OpenDNS, AdGuard, Shecan), 7 proxy
+  (v2rayN SOCKS 10808 / HTTP 10809, Clash 7890, Clash Verge 7897, Shadowsocks 1080, Tor 9050, Tor Browser 9150).
+* **Windows adapter:** proxy only. Registry values `ProxyEnable/ProxyServer/ProxyOverride/AutoConfigURL/
+  AutoDetect`, PowerShell through the `CommandRunner` port, WinINet refresh after each write. `Disabled`
+  writes remove `ProxyServer`, `ProxyOverride`, `AutoConfigURL`. Stored-but-switched-off settings are
+  `Other { enabled: false }`. DNS returns `Unsupported` (needs admin; Step 10).
+
+## 5. The CLI today
+
+Settings directory: `%APPDATA%\Hopswitch` (Windows), `~/Library/Application Support/Hopswitch` (macOS),
+`$XDG_CONFIG_HOME/hopswitch` or `~/.config/hopswitch` (others); override with env `HOPSWITCH_DIR`.
+Files: `profiles.json`, `auto.json`, `session-proxy.json`, `session-dns.json`. Damaged files are reported
+and **never modified or deleted**; `off` works even if `profiles.json` / `auto.json` are damaged.
+On non-Windows systems the system adapter is `UnsupportedNetwork` (profiles, `ping`, groups and settings
+still work; applying fails with a clear message).
+
+```
+hopswitch status | presets | help
+hopswitch proxy use <name|preset> | off | list | add <name> <scheme://host:port> [--bypass a,b]
+hopswitch proxy add-group <name> <member>...      # "fastest of ..."; use <group> applies the fastest live member
+hopswitch proxy remove <name>                     # a proxy or a group
+hopswitch dns use|off|list|add <name> <ip[,ip...]>|remove
+hopswitch ping [proxy|dns] [--url U] [--domain D] [--timeout MS]
+hopswitch auto status | set [--url U] [--domain D] [--timeout MS] [--interval SECS]
+hopswitch auto proxy connect on|off
+hopswitch auto dns connect|switch on|off | pool add|remove <name>
+hopswitch auto run [--once]
+hopswitch off
 ```
 
-### Public API of `hopswitch-core` today
-- `ProxyScheme {Http,Https,Socks4,Socks5}` (FromStr case-insensitive, Display).
-- `ProxyConfig::new(scheme, host, port)`, `.with_bypass(Vec<String>)`, getters, `FromStr`/`Display` for `scheme://host:port` (IPv6 as `[::1]`), hostname lower-casing/validation. `serde` deserialisation re-validates (`try_from` DTO).
-- `DnsConfig::new(Vec<IpAddr>)` / `from_strs(...)` / `servers()`; 1–`MAX_DNS_SERVERS`(=4) servers, ordered, no duplicates, no unspecified addr; serialises as a plain JSON array.
-- `ProxyProfile` / `DnsProfile` (Step 2; the bundled `Profile` is gone). Name ≤ `MAX_NAME_CHARS`(=64) counted in *chars* (Persian OK).
-- `ValidationError` (thiserror enum) for all of the above.
-- `managed_block::{apply_block, remove_block, contains_block, BlockError, BEGIN_MARKER, END_MARKER}`: pure string transforms. Block goes at the **top** of the file; everything else byte-for-byte; `remove(apply(x)) == x`; refuses unterminated/stray/duplicate markers and lines that could break out.
+`proxy use` also selects the profile for auto connect. A group with no live member changes nothing.
+`auto run` reopens the services every round and prints a persistent problem only once.
+(The help text is generated in `crates/cli/src/app.rs`, `USAGE`.)
 
-## 4. Decisions already made (read the ADRs)
+## 6. Decisions (ADRs) and unwritten rules
 
 | ADR | Decision |
-|---|---|
+| --- | --- |
 | 0001 | Tauri 2 over Flutter |
-| 0002 | Name **Hopswitch** (crate prefix `hopswitch-*`). Names checked free on npm/crates.io/PyPI. Rejected: Waypoint, Switchyard, Lane, Routa, Pol, Rah |
-| 0003 | Foreign system files are edited only via a marked block; prefer `resolvectl`/`nmcli` when systemd-resolved/NetworkManager owns DNS; never replace a symlinked resolv.conf; backup before first write; atomic write; glibc reads only the first **3** nameservers (warn/truncate in the Linux adapter) |
-| 0004 | UI: **two independent panels (Proxy | DNS) side by side**, slim 64px icon rail (Home / Settings / About), tray mirrors the panels. Consequence: `Profile` splits into independent `ProxyProfile` and `DnsProfile` |
+| 0002 | Name **Hopswitch** (crate prefix `hopswitch-*`) |
+| 0003 | Foreign system files only via a marked block; prefer `resolvectl`/`nmcli`; never replace a symlinked resolv.conf; backup first; glibc reads only 3 nameservers |
+| 0004 | UI: two independent panels (Proxy ∣ DNS) + 64 px icon rail (Home / Settings / About); tray mirrors panels; `ProxyProfile` and `DnsProfile` are separate |
+| 0005 | Sessions and services (snapshot before change, exact restore) |
+| 0006 | Presets and manual entry |
+| 0007 | Persistence (atomic JSON, versioned, corrupt files quarantined only on request) |
+| 0008 | OS adapters; **addendum**: `Disabled` = nothing stored; stored-but-off = `Other { enabled: false }` |
+| 0009 | Real probes (not ICMP); auto connect/switch as a pure decision engine; hysteresis |
+| 0010 | Profile kinds, SwitchyOmega-style: `Proxy`, `Group` (done), `Rules` (phase 2), `Apps` (undecided); auto connect = plain flag + selected profile; manual disconnect wins |
+| 0011 | Domain rules and public rule lists; compact PAC; **proposed**, waits for the Windows measurement |
 
-Architecture rules (AGENT.md): dependencies point inward (`src-tauri → platform-* → core`); OS access only behind a trait in `core`; parse-don't-validate; **always snapshot before applying** and restore exactly on off; no `unwrap/expect/panic` outside tests; least privilege (no running the whole app elevated).
+Also in force: no `unwrap/expect/panic` outside tests; `missing_docs` is a warning (and CI uses `-D warnings`),
+so every public item needs docs; clippy pedantic is on; tests in `crates/*/tests/`; one checklist step ≈ one
+commit; the UI will use `design-system/MASTER.md` (Step 8, ui-ux-pro-max) and the checklist in AGENT.md.
 
-## 5. NEXT: CLI is finished (Step 7b)
+## 7. CI and the toolchain
 
-`crates/cli` is a workspace member again; `app.rs` is written and all 203 tests pass (core 104, storage 30,
-platform-windows 31, cli 38 -> now 264 in total incl. probe 22; see Step 7c); fmt + clippy (`-D warnings`) clean.
-Behaviour notes: DNS `Automatic` shows as `automatic (from the network)` in `status`; `off` with nothing active is a no-op without writes.
+`.github/workflows/ci.yml` jobs: **`lint`** (ubuntu: `cargo fmt --check` + `cargo clippy --all-targets -- -D warnings`
+on newest stable), **`test`** (ubuntu / windows / macos, `cargo test --no-fail-fast`), **`msrv`** (Rust 1.75.0),
+**`windows-proxy-smoke`** (real registry on a runner: apply `v2rayn-socks` through the CLI, read the registry,
+`off`, assert the registry is back; **second round** with a stored-but-off address). `pac-bench.yml` is manual
+(`workflow_dispatch`) or runs when `tools/pac-bench/**` changes.
 
-**In this order of value:**
-1. **Ask the user to run the Windows smoke test** (`cargo run -p hopswitch-platform-windows --example proxy_smoke`, then `-- apply v2rayn-socks`) and report the output: the Windows adapter has only ever been tested with fakes. Once the CLI works, `hopswitch proxy use v2rayn-socks` / `hopswitch off` on his machine is the best real test.
-2. Step 5 (macOS) / Step 6 (Linux) adapters, or Step 7 (Tauri shell), depending on what the user wants. **The OS was assumed to be Windows; the user never confirmed.**
-3. Windows DNS needs administrator rights: implemented together with Step 10 (elevated helper). Until then `WindowsNetwork` DNS calls return `Unsupported`.
-4. Before release: re-verify preset values against official docs (Shecan was confirmed only through third-party scripts; **Electro** was left out for lack of a reliable source). Revisit the `tempfile = "=3.10.1"` pin when the minimum Rust version is decided.
+**CI uses the newest stable Rust; clippy gains lints between releases and has failed CI twice** because the
+sandbox had 1.75. To see what CI will see, install the same version. In the sandbox (no rustup) this worked:
 
-TDD as always: red → green → refactor → gate → checklist → commit → zip.
+1. From <https://conda.anaconda.org/conda-forge/> download `linux-64/rust-1.99.1-h5387ef0_0.conda` (≈200 MB)
+   and `noarch/rust-std-x86_64-unknown-linux-gnu-1.99.1-h480d76f_0.conda` (≈41 MB). Find current files in
+   `linux-64/current_repodata.json` and `noarch/current_repodata.json`.
+2. Each `.conda` is a zip with a `pkg-*.tar.zst`: unpack both into one folder with Python (`zipfile`,
+   `pip install zstandard`, `tarfile`).
+3. `export PATH=<dir>/bin:$PATH LD_LIBRARY_PATH=<dir>/lib CARGO_TARGET_DIR=/tmp/target199` (separate target dir).
+4. `cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test`. Many lints are fixed
+   by `cargo clippy --fix --allow-dirty --allow-no-vcs --all-targets`.
+5. Also run the MSRV: `cargo +1.75.0 test` (or the apt Rust 1.75 that the sandbox has by default).
 
-## 6. UI design preview
+`rust-version = "1.75"` is declared in `Cargo.toml` (clippy respects it, so it will not suggest newer APIs).
+Some dependencies are pinned for old toolchains (`thiserror = "1"`, `tempfile = "=3.10.1"`).
 
-Open `design/preview/index.html` (standalone page, all current boards; see `design/README.md`). The older canvas files are mirrored in `design/preview/*.dc.html`. Boards: **Main** (two panels + rail), **Tray**, **Settings** (General + Safety: restore on quit, backup before first change, update check, no telemetry of his proxies/DNS), **About**. **Editor, Empty, Rtl are outdated** (old bundled-profile model, no rail); align them with ADR-0004 when asked. `Artboard-be99` is an empty board the *user* added: leave it alone.
-Look: dark first, bg `#0F1115`, surface `#171A21`, border `#262B36`, muted `#9AA3B2`, accent `#34D399`; light/RTL palette in `Rtl` board; Vazirmatn for Persian. RTL + Persian must be first-class (logical CSS properties; keep IPs LTR via `dir="ltr"`).
-To change the canvas use the Artifact tool with that URL (re-read before overwriting; the user edits it too).
+## 8. Status: verified, unverified, waiting on the user
 
-## 7. Skills / references evaluated
+**Verified by running:** all 354 tests on Rust 1.75 **and** 1.99.1; `fmt` and `clippy -D warnings` on both;
+the CLI binary against a local fake proxy on Linux (`ping`, groups, `auto status`); the PAC variants in V8 (Node 22)
+and QuickJS (0 wrong answers in 174 723 hosts). **Observed on a real Windows runner (CI run before Step 4b):**
+`proxy use v2rayn-socks` wrote `ProxyEnable=1`, `ProxyServer=socks=127.0.0.1:10808`; `status` showed it active.
 
-- **ui-ux-pro-max** (nextlevelbuilder/ui-ux-pro-max-skill): plan to generate `design-system/MASTER.md` in Step 8 and use its pre-delivery checklist (already copied into AGENT.md). Re-read its README for the exact CLI.
-- **Impeccable** (pbakaus/impeccable): *yes, selectively*: `critique/audit/polish/harden/onboard`, and `npx impeccable detect` as a CI gate on the frontend. Known tells in our mockups to fix in the real UI: Inter as sole font, nested cards, rounded icon tiles beside headings. It has anonymous telemetry (off via `DO_NOT_TRACK=1`) and installs hooks that download a binary; the user should review before installing locally.
-- **taste-skill** (leonxlnx): *not now*; built for marketing/landing pages with real photos. Use later for a Hopswitch download website.
-- Tauri 2 skills/docs: `skills.sh` entries (gihwan-dev/claude-code-gui `tauri-v2`, openaec-foundation `tauri-2-claude-skill-package`) for IPC/permissions review; Tauri docs "Mock Tauri APIs" (`mockIPC`) for Vitest.
+**Not verified (do not claim otherwise):**
+* The newest CI run (lint, test ×3, msrv, windows-proxy-smoke including the stored-address round). The last run
+  the user pasted (#4) had two failures, both fixed afterwards: clippy 1.99 `assert_is_empty` in tests, and the
+  Windows `hopswitch-probe --test proxy` target. **The failing test's name was not in the truncated log**; the fix
+  (looser timing: refused loopback connects take ~2 s on Windows, `thread::sleep` can wake early) is a best guess.
+  If it fails again, ask for the lines `---- <test name> stdout ----` and the next 10 lines.
+* `tools/pac-bench/bench.ps1` (C# P/Invoke of `WinHttpGetProxyForUrl` inside PowerShell) has **never been run**.
+  `pwsh` is not available in the sandbox. The same holds for the PowerShell in the CI smoke job's second round.
+* Windows' PAC engine with a ~650 KB script (ADR-0011 decision gate). The exact PAC size cap in Chromium (its
+  fetcher defines one; the value was not visible in what was read; a third-party note says 1 MB).
+* Preset values against official docs (Shecan was confirmed through third-party sources; Electro omitted).
+* Tauri, the UI, macOS and Linux were never built or run. The sandbox cannot run a GUI.
 
-## 8. Environment notes & gotchas (old sandbox; may differ)
+**Waiting on the user (ask for these first):**
+1. Push the newest zip and paste the results of the **CI run** (all four jobs).
+2. Run **Actions → PAC benchmark → Run workflow** and paste the job *Summary* table (variant, bytes, first
+   lookup ms, mean lookup µs, wrong, status) and any error text.
+3. Optional manual checks on his own Windows machine: `hopswitch auto run --once`, then `hopswitch auto run`.
+4. Upload `design/logo/export/social-preview.png` in the repo settings (Social preview).
 
-- No rustup. Installed via apt as root: `apt-get install -y cargo rustc rustfmt rust-clippy` → **Rust 1.75**. Hence `thiserror = "1"` (2.x needs ≥ 1.77). **Tauri 2 needs Rust ≥ 1.77 + webkit/GTK libs**, and a GUI can't run in the sandbox: Tauri/UI code can't be executed there, so write it carefully and ask the user to run `npm run tauri dev` locally and paste errors. Keep logic in `core`/`platform-*` where tests can actually run.
-- `bash_tool` runs `sh`: use `bash script.sh` for `${PIPESTATUS}`/`${var:0:2}`. `npm` prints a ".npmrc prefix" error in the sandbox. `cargo test` stops at the first failing test binary (use `--no-fail-fast` for the full picture).
-- Network allow-list includes npm, crates.io, PyPI, github.com; `api.github.com/users/...` returned 403.
-- Clippy pedantic bit us on: `needless_borrows_for_generic_args`, `single_match_else`, `doc_markdown` (wrap `Hopswitch`-style names in backticks).
-- Windows/macOS adapters can't be tested in the sandbox either: isolate command construction/parsing into pure functions and unit-test those.
+## 9. What to do next (ordered)
 
-## 9. Open items for the user (not blocking)
+1. **Read the CI and PAC results** and fix what they show (one commit per fix, zip, checklist).
+2. **Apply the ADR-0011 decision gate.** Pass = WinHTTP loads `bucket-ir`, answers every sample host correctly,
+   first lookup (download + compile) < 2 s. Then build phase 2 with TDD, in this order:
+   1. `ProxyState::Pac(PacConfig)` as a first-class state (today a PAC is read as `Other`): Windows `AutoConfigURL`
+      with no manual proxy; keep restore exactness (extend `tests/restore.rs`); update CLI `status`.
+   2. A built-in **`Direct`** profile and a **`Rules`** profile in `Profiles` (ordered rules + default target; targets
+      must exist; first match wins; user rules before list rules; domain-suffix matching).
+   3. **Rule lists**: importer for the two formats (plain `domains.txt`, dotted `.example.com`), normalise
+      (lowercase, strip dot, dedupe, drop+count invalid, drop entries covered by a parent), one `.ir` suffix rule
+      instead of 69 k entries.
+   4. **PAC generator in Rust** (the Python spike in `tools/pac-bench/make_pac.py` is the reference): compact
+      bucket format, ES3 only, plain host names `DIRECT`, lowercase, `hasOwnProperty` guard. Must pass the same
+      exhaustive reference test (every listed domain, a subdomain of each, near-misses, look-alikes) run with Node in CI.
+      Budget: hard 1 000 000 bytes, target 750 000.
+   5. **Local PAC server** on `127.0.0.1` (std only) + the rule that applying a `Rules` profile needs a running
+      Hopswitch process (desktop app, or an explicit `hopswitch serve`); watchdog/cleanup of the PAC setting on exit
+      and after a crash (extends the restore story).
+   6. **Updater** (opt-in, release asset URL, check `.sha256` when published, cache, keep the old list on failure,
+      download through the selected proxy, manual import) + bundled snapshot + `THIRD_PARTY_NOTICES`.
+   7. CLI: `rules ...` commands; presets "Iran: local sites direct" and "Developer services" (both off by default).
+   If the gate **fails**: shrink the list (only the `proxy` and hand-picked categories) or move per-domain routing to
+   a local router (ADR-0010 §5, needs its own ADR because it changes what the product is).
+3. **Step 7 — Tauri shell** (commands, capabilities allow-list, tray, single instance, autostart) and a background
+   loop calling `AutoRunner::tick`; then **Step 8/9** design system and UI (profile editor for kinds, group picker,
+   auto-connect checkbox next to the selected profile, latency badges, Settings > Connectivity).
+   The sandbox cannot run a GUI: keep logic in `core`/adapters, write the shell carefully, and ask the user to run
+   `npm run tauri dev` locally and paste errors.
+4. **Step 10 — Windows DNS** through an elevated helper (never run the whole app elevated). Until then auto for DNS
+   does not work on Windows.
+5. **Steps 5/6 — macOS (`networksetup`) and Linux (`gsettings`, `resolvectl`/`nmcli`, managed block)** adapters.
+6. Before launch: reserve GitHub org, domain, trademark search, npm/crates.io names; re-verify preset values.
 
-- Reserve before public launch: GitHub org `hopswitch`, domain (`hopswitch.app/.io/.com`), trademark search (WIPO/EUIPO), npm + crates.io names.
-- He has not explicitly confirmed the two-panel + rail + Settings/About direction beyond "whatever is better"; he said he will give design feedback himself later.
-- Possible later feature: one-click "combos" that apply a proxy and a DNS together; TUN/VPN-style capture for apps that ignore the system proxy (explicitly out of scope for now).
+## 10. Data sources for rules (ADR-0011)
 
+* **`bootmortis/iran-hosted-domains`** — MIT, rebuilt by a GitHub Action every one to two weeks. Release assets include
+  `domains.txt` (<https://github.com/bootmortis/iran-hosted-domains/releases/latest/download/domains.txt>), Clash,
+  sing-box, v2ray `.dat`, Surge, `switchy_omega.sorl`, each with a `.sha256`. Categories: `all`/`tld-ir`/`other`
+  (→ direct), `ads` (→ block), `proxy` (Iran-related domains that are filtered inside Iran → proxy).
+  Measured (2026-10-24): 127 069 domains, no duplicates, none invalid; 69 512 end in `.ir`, 57 557 do not (48 910 `.com`).
+* **`freedomofdevelopers/fod`, file `domains`** (<https://raw.githubusercontent.com/freedomofdevelopers/fod/master/domains>)
+  — services that block Iran, `.example.com` per line; 620 lines, 605 distinct, no invalid. Contributed publicly
+  through issues; the README mentions CC BY-SA 3.0. **Project stance (the user's call):** treat it as a public list
+  of facts, credit it, ship a normalised snapshot (not legal advice). Do **not** add their proxy server
+  (`fodev.org:8118`, plain HTTP, third party, no guarantee) as a preset.
+* **PAC sizes measured:** object per domain 2 276 532 B; `.ir` as one rule 1 074 041 B; **compact buckets + `.ir`
+  rule 649 448 B** (254 KB gzip); FOD 10 718 B. Load ≈ 10 ms, 4–7 µs per lookup in V8 and QuickJS.
+  Third-party notes claim Chromium re-evaluates PAC often; unverified.
 
-## Reproducing the CI toolchain locally (clippy changes between releases)
+## 11. Design, theme, logo
 
-CI runs the newest stable Rust; a lint added after your toolchain will fail CI. To see the same
-errors before pushing, install the same version (here from conda-forge, which works without rustup):
-download `rust-<ver>` (linux-64) and `rust-std-x86_64-unknown-linux-gnu-<ver>` (noarch) `.conda` files
-from https://conda.anaconda.org/conda-forge/, unpack their `pkg-*.tar.zst` into one folder, put its `bin` on
-`PATH` and its `lib` on `LD_LIBRARY_PATH`, and use a separate `CARGO_TARGET_DIR`. With rustup it is
-simply `rustup toolchain install stable`. Then: `cargo fmt --all --check`,
-`cargo clippy --all-targets -- -D warnings`, `cargo test`. The oldest supported toolchain is 1.75
-(`rust-version`): `cargo +1.75.0 test`.
+* **Theme: dark first, emerald accent** (from `design/preview` boards): bg `#0F1115`, surface `#171A21`, border
+  `#262B36`, text `#E8EAF0`, muted `#9AA3B2`, accent `#34D399` (lighter `#6EE7B7`, text on accent `#04130C`);
+  light theme accent `#059669`; Vazirmatn for Persian; RTL via logical CSS properties, IPs `dir="ltr"`.
+  Editor, Empty and Rtl boards are outdated (old bundled-profile model, no rail). `Artboard-be99` is the user's: leave it.
+* **Logo** (`design/logo`): a switch whose knob hops (green track = "on", arrow = the hop), dark squircle with a faint
+  green rim. Three hand-drawn SVGs: `icon.svg` (≥ 48 px), `icon-small.svg` (16–32 px, arrow dropped because it reads as a
+  padlock when small), `tray-template.svg` (black + alpha for the macOS menu bar). `build.py` generates light/dark
+  lockups (Poppins Bold converted to paths), Tauri-named PNG/ICO exports, tray icons and a 1280×640 social preview.
+  Needs `pip install novasvg pillow fonttools` and the Poppins font (`POPPINS_DIR`). `novasvg.svg2png` mis-handles
+  `bytes` input: pass a `str` or a path.
+* Skills evaluated earlier: ui-ux-pro-max (use for `design-system/MASTER.md`), Impeccable (selectively; known tells in
+  our mockups: Inter as the only font, nested cards, rounded icon tiles beside headings; it has telemetry, off with
+  `DO_NOT_TRACK=1`), taste-skill (not now; marketing pages).
+
+## 12. Environment gotchas (sandbox)
+
+* No rustup. Default toolchain from apt is **Rust 1.75** (see §7 for 1.99.1). `bash_tool` runs `sh`: use `bash` for
+  `${PIPESTATUS}`. `cargo test` stops at the first failing test binary: use `--no-fail-fast`.
+* **Never `pkill -f <pattern>`** when the pattern also appears in your own command line (it kills the shell). To stop a
+  background server, loop over `/proc/*/cmdline` for an exact match. Start servers with
+  `setsid nohup … < /dev/null &`, otherwise the tool call hangs.
+* Text patches done with Python `str.replace` replace **every** occurrence (it once changed both `ProxyState::Other`
+  and `DnsState::Other`), and `cargo fmt` reflows code so a later patch may silently not match: use anchored
+  replaces and check the result. The tool's output display may abbreviate `<name>` to `<n>`; the file is fine.
+* Network from the sandbox: github.com, raw.githubusercontent.com, crates.io, PyPI, npm and conda.anaconda.org work;
+  `web_fetch` only opens URLs the user (or a previous result) supplied. Node 22 and `quickjs` (pip) are available;
+  `pwsh` is not.
+* Windows/macOS behaviour cannot run here: isolate command construction and parsing in pure functions, test those,
+  and let CI's real runners prove the rest.
+
+## 13. Mistakes made in this project (do not repeat)
+
+1. Picked a blue/orange logo **without reading** `design/preview` and this file: the theme is dark + emerald.
+   Read the design docs before any visual choice.
+2. Stated that Chromium refuses `file://` PAC URLs; the source only says it refuses *redirects* to `file://`.
+   Corrected in ADR-0011. Do not state browser behaviour that was not read.
+3. Estimated the PAC size (≈ 3 MB) before measuring it (1.07 MB / 0.65 MB). Measure first.
+4. Worked on clippy 1.75 while CI ran 1.99: two CI failures. Reproduce the CI toolchain (§7).
+5. Wrote tests that assumed Linux timing (probe tests) and a CI assertion stricter than the adapter's promise
+   (exposed the real Step 4b restore gap). Make timing assertions generous and test promises, not accidents.
+6. Attributed a licensing opinion to FOD's owner; it was the project's own stance. Attribute carefully.
+
+## 14. Open questions for the user
+
+* Which OS does he use daily? (Never confirmed; decides which adapter and what he can test himself.)
+* Phase 3 (per-app): accept a local router (changes what the product is) or only "launch a program with the proxy"?
+* Confirm the UI direction in ADR-0004 and the profile editor for kinds; he promised to give design feedback.
+* Combos (apply a proxy and a DNS together) and TUN/VPN-style capture are out of scope for now.

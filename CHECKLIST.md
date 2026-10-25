@@ -102,9 +102,9 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] `Prober` port + `FakeProber` + parallel `probe_proxies` / `probe_dns_profiles` in core (5 tests)
 - [x] `crates/probe` (`NetProber`, std only): DNS `A` query over UDP; HTTP through HTTP / SOCKS4a / SOCKS5 proxies; `https://` targets test the tunnel; 22 tests against loopback fake servers
 - [x] CLI: `hopswitch ping [proxy|dns] [--url U] [--domain D] [--timeout MS]` (read-only, marks the active profile)
-- [x] `AutoConfig` (per-kind connect/switch + ordered pool + test settings), `AutoConfigStore` port, `JsonFileAutoStore` -> `auto.json` (versioned, atomic, damaged file reported and never touched)
+- [x] `AutoConfig` (per-kind connect/switch + ordered pool + test settings; **the proxy part became `connect` + `selected` in Step 7d, DNS kept switch + pool**), `AutoConfigStore` port, `JsonFileAutoStore` -> `auto.json` (versioned, atomic, damaged file reported and never touched)
 - [x] `AutoRunner` in core: probe pool -> `Autopilot` -> apply through the normal services; proxy and DNS independent, a failure in one never blocks the other; off kinds send no traffic
-- [x] CLI: `hopswitch auto status | set | proxy|dns connect|switch on|off | proxy|dns pool add|remove | run [--once]`; `ping` uses the saved test settings; removing a profile prunes it from its pool; `run` reopens services every round and reports a persistent problem once
+- [x] CLI: `hopswitch auto status | set | proxy|dns connect|switch on|off | proxy|dns pool add|remove | run [--once]` (**proxy `switch` and `pool` were removed in Step 7d**); `ping` uses the saved test settings; removing a profile prunes it from its pool; `run` reopens services every round and reports a persistent problem once
 - [ ] Background loop in the Tauri shell (call `AutoRunner::tick`, same as `auto run`); UI: latency badges per profile, Settings > Connectivity, Auto connect / Auto switch toggles per panel
 - [ ] Manual check on a real Windows machine: `hopswitch auto run --once`, then `hopswitch auto run`
 
