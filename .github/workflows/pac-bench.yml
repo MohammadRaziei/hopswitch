@@ -1,0 +1,35 @@
+name: PAC benchmark
+
+# A measurement, not a gate: how big a PAC script for the real Iran / FOD lists can be and still
+# work in Windows' own PAC engine (WinHTTP). See docs/adr/0011-domain-rules-and-rule-lists.md.
+# Run it by hand (Actions -> PAC benchmark -> Run workflow) or by touching tools/pac-bench.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tools/pac-bench/**'
+      - '.github/workflows/pac-bench.yml'
+
+jobs:
+  windows:
+    name: PAC through WinHTTP
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download the two public lists
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path data | Out-Null
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://github.com/bootmortis/iran-hosted-domains/releases/latest/download/domains.txt' -OutFile data/iran.txt
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/freedomofdevelopers/fod/master/domains' -OutFile data/fod.txt
+          "iran: $((Get-Content data/iran.txt).Count) lines, fod: $((Get-Content data/fod.txt).Count) lines"
+      - name: Generate the PAC variants
+        run: python tools/pac-bench/make_pac.py --iran data/iran.txt --fod data/fod.txt --out build
+      - name: Check every answer in V8 (Node)
+        run: python tools/pac-bench/verify_local.py build --engine node
+      - name: Run them through WinHTTP
+        shell: pwsh
+        run: ./tools/pac-bench/bench.ps1 -PacDir build

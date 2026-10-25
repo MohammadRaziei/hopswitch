@@ -6,3 +6,7 @@ src-tauri/gen/
 .DS_Store
 *.log
 .env
+
+# tools/pac-bench: downloaded lists and generated PAC files
+/data/
+/build/
