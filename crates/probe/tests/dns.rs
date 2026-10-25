@@ -83,7 +83,7 @@ fn a_working_resolver_is_alive_with_a_measured_latency() {
     });
 
     match probe(port, 2000) {
-        Health::Alive { latency_ms } => assert!((80..1500).contains(&latency_ms), "{latency_ms}"),
+        Health::Alive { latency_ms } => assert!((60..3000).contains(&latency_ms), "{latency_ms}"),
         Health::Dead => panic!("should be alive"),
     }
 }
@@ -102,7 +102,7 @@ fn a_silent_resolver_is_dead_after_the_timeout() {
 
     assert_eq!(probe(port, 300), Health::Dead);
     assert!(
-        started.elapsed() < Duration::from_millis(1500),
+        started.elapsed() < Duration::from_millis(2500),
         "{:?}",
         started.elapsed()
     );

@@ -94,7 +94,7 @@ fn without_the_flag_or_a_selection_nothing_is_probed() {
         &proxy_auto(None),
     );
 
-    assert!(prober.calls().is_empty());
+    assert_eq!(prober.calls(), Vec::<String>::new());
     assert_eq!(
         flag_off.net.proxy_write_count() + nothing_selected.net.proxy_write_count(),
         0
@@ -114,7 +114,7 @@ fn a_selection_that_no_longer_exists_does_nothing() {
     );
 
     assert_eq!(report.proxy.decision, Decision::Keep);
-    assert!(prober.calls().is_empty());
+    assert_eq!(prober.calls(), Vec::<String>::new());
 }
 
 // ---------- a plain proxy is selected ----------

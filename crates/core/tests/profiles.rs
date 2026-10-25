@@ -21,8 +21,8 @@ fn dns(id: &str) -> DnsProfile {
 fn starts_empty() {
     let p = Profiles::new();
 
-    assert!(p.proxy_profiles().is_empty());
-    assert!(p.dns_profiles().is_empty());
+    assert_eq!(p.proxy_profiles(), []);
+    assert_eq!(p.dns_profiles(), []);
 }
 
 #[test]

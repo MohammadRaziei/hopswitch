@@ -80,8 +80,10 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [ ] Phase 3: per-app. Not decided; needs a local router (changes what the product is) or the cheap "launch a program with the proxy" alternative. Own ADR first.
 - [ ] UI: profile editor for the kinds, the group picker, the auto connect checkbox next to the selected profile
 
-### 🟨 Step 4b — Windows restore fidelity (found by the CI smoke job)
-- [ ] After `apply` + `off` the proxy is off again, but `ProxyServer` keeps the text Hopswitch wrote (`socks=127.0.0.1:10808`) when the original had none, and a user's own leftover server text (proxy switched off, address still stored) is also replaced. Cause: `ProxyState::Disabled` carries no payload, and `plan_write(Disabled)` only writes `ProxyEnable=0` (deliberate: a failed apply must not delete a leftover). Harmless in effect (nothing is proxied), but not an exact restore. Needs an ADR: let the snapshot keep the raw registry values (e.g. `Disabled` with the leftover text) and restore them exactly.
+### ✅ Step 4b — Windows restore fidelity (found by the CI smoke job)
+- [x] `Disabled` = nothing switched on and nothing stored (writing it also removes `ProxyServer`, `ProxyOverride`, `AutoConfigURL`); a stored-but-switched-off address is `Other { enabled: false }` and restored exactly (ADR-0008 addendum)
+- [x] Test: apply + restore returns 14 kinds of original registry to the same meaning; `status` says "off" for stored settings that are not in use
+- [ ] Confirm on the real runner: `windows-proxy-smoke` now checks both a clean registry and a stored address (not run yet)
 
 ### ✅ Logo (`design/logo`)
 - [x] App icon, small-size variant (16-32 px), monochrome tray mark, light/dark lockups, Tauri-named PNG/ICO exports, GitHub social preview; reproducible with `design/logo/build.py`
@@ -90,7 +92,9 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 ### ✅ CI
 - [x] `.github/workflows/ci.yml`: fmt + clippy + tests on Linux / Windows / macOS, and `windows-proxy-smoke` (applies a preset through the CLI on a real Windows runner, reads the registry, restores)
 - [x] First run on GitHub: the Windows smoke job proved the adapter on a real runner (apply wrote `ProxyEnable=1`, `ProxyServer=socks=127.0.0.1:10808`; `off` switched it off). Clippy failed on a lint newer than the local toolchain (`assigning_clones`): fixed; lint now runs in its own job so it cannot hide test results
-- [ ] Second run: confirm `lint`, `test` (3 OS) and `windows-proxy-smoke` are all green
+- [x] Second run found two things: clippy 1.99 added `assert_is_empty` (fixed in all tests), and the Windows `hopswitch-probe` proxy tests assumed Linux timing (a refused loopback connection takes ~2 s on Windows; `thread::sleep` can wake early): loosened. The CI toolchain is now reproducible locally (Rust 1.99.1 from conda-forge; see HANDOFF)
+- [x] `rust-version = "1.75"` declared and tested by the `msrv` CI job
+- [ ] Third run: confirm `lint`, `test` (3 OS), `msrv` and `windows-proxy-smoke` are all green
 
 ### 🟨 Step 7c — Connectivity test & auto modes (ADR-0009)
 - [x] `ConnectivitySettings` (probe URL / DNS domain / timeout / interval): validated, serde re-validates

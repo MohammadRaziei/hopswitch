@@ -113,3 +113,15 @@ To change the canvas use the Artifact tool with that URL (re-read before overwri
 - Reserve before public launch: GitHub org `hopswitch`, domain (`hopswitch.app/.io/.com`), trademark search (WIPO/EUIPO), npm + crates.io names.
 - He has not explicitly confirmed the two-panel + rail + Settings/About direction beyond "whatever is better"; he said he will give design feedback himself later.
 - Possible later feature: one-click "combos" that apply a proxy and a DNS together; TUN/VPN-style capture for apps that ignore the system proxy (explicitly out of scope for now).
+
+
+## Reproducing the CI toolchain locally (clippy changes between releases)
+
+CI runs the newest stable Rust; a lint added after your toolchain will fail CI. To see the same
+errors before pushing, install the same version (here from conda-forge, which works without rustup):
+download `rust-<ver>` (linux-64) and `rust-std-x86_64-unknown-linux-gnu-<ver>` (noarch) `.conda` files
+from https://conda.anaconda.org/conda-forge/, unpack their `pkg-*.tar.zst` into one folder, put its `bin` on
+`PATH` and its `lib` on `LD_LIBRARY_PATH`, and use a separate `CARGO_TARGET_DIR`. With rustup it is
+simply `rustup toolchain install stable`. Then: `cargo fmt --all --check`,
+`cargo clippy --all-targets -- -D warnings`, `cargo test`. The oldest supported toolchain is 1.75
+(`rust-version`): `cargo +1.75.0 test`.

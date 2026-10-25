@@ -154,6 +154,7 @@ fn deactivate_restores_the_exact_previous_state_and_clears_the_session() {
 fn foreign_states_are_restored_verbatim() {
     let pac = ProxyState::Other {
         raw: "pac:http://wpad/proxy.pac".into(),
+        enabled: true,
     };
     let net = Arc::new(InMemoryNetwork::new().with_proxy(pac.clone()));
     let mut service = ProxyService::new(net.clone(), Arc::new(InMemoryStore::new()));

@@ -209,10 +209,7 @@ fn profiles_with_groups_round_trip_and_old_files_still_load() {
     assert_eq!(serde_json::from_str::<Profiles>(&json).unwrap(), profiles);
 
     let old = r#"{"proxies":[],"dns":[]}"#;
-    assert!(serde_json::from_str::<Profiles>(old)
-        .unwrap()
-        .groups()
-        .is_empty());
+    assert_eq!(serde_json::from_str::<Profiles>(old).unwrap().groups(), []);
 }
 
 #[test]

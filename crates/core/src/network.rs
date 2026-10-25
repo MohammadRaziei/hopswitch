@@ -15,7 +15,11 @@ use crate::{DnsConfig, ProxyConfig};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProxyState {
-    /// No system proxy is configured.
+    /// No system proxy settings at all: nothing is switched on and nothing is stored.
+    ///
+    /// Settings that are stored but switched off (an address Windows keeps after the proxy is
+    /// turned off) are *not* this: they are `Other { enabled: false, .. }`, so restoring a
+    /// snapshot brings them back too.
     Disabled,
     /// A manual proxy that Hopswitch understands.
     Manual(ProxyConfig),
@@ -26,7 +30,16 @@ pub enum ProxyState {
     Other {
         /// Opaque, adapter-defined description of the foreign state.
         raw: String,
+        /// Whether this state routes traffic (a PAC script, a proxy that is switched on).
+        /// `false` means settings are stored but not in use. Sessions saved before this
+        /// field existed read as `true`: assume it was in use.
+        #[serde(default = "in_use_by_default")]
+        enabled: bool,
     },
+}
+
+fn in_use_by_default() -> bool {
+    true
 }
 
 /// What the system DNS looked like (or should look like).

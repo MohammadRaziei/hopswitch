@@ -36,6 +36,7 @@ fn written_state_is_read_back_exactly() {
 fn foreign_states_we_cannot_model_are_preserved_verbatim() {
     let pac = ProxyState::Other {
         raw: "pac:http://wpad/proxy.pac".into(),
+        enabled: true,
     };
     let net = InMemoryNetwork::new().with_proxy(pac.clone());
 
@@ -82,7 +83,14 @@ fn states_survive_a_json_round_trip() {
     let states = [
         ProxyState::Disabled,
         ProxyState::Manual(proxy()),
-        ProxyState::Other { raw: "x".into() },
+        ProxyState::Other {
+            raw: "x".into(),
+            enabled: true,
+        },
+        ProxyState::Other {
+            raw: "y".into(),
+            enabled: false,
+        },
     ];
     for s in states {
         let back: ProxyState = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
@@ -104,4 +112,32 @@ fn states_survive_a_json_round_trip() {
 fn deserialising_a_manual_state_revalidates_the_config() {
     let json = r#"{"manual":{"scheme":"http","host":"h","port":0}}"#;
     assert!(serde_json::from_str::<ProxyState>(json).is_err());
+}
+
+#[test]
+fn a_foreign_state_saved_before_the_enabled_flag_existed_counts_as_enabled() {
+    // The safe reading of an old session: assume the foreign state was in use.
+    let old = r#"{"other":{"raw":"whatever"}}"#;
+
+    let state: ProxyState = serde_json::from_str(old).unwrap();
+
+    assert_eq!(
+        state,
+        ProxyState::Other {
+            raw: "whatever".into(),
+            enabled: true
+        }
+    );
+}
+
+#[test]
+fn the_enabled_flag_is_written_out() {
+    let off = ProxyState::Other {
+        raw: "r".into(),
+        enabled: false,
+    };
+
+    let json = serde_json::to_string(&off).unwrap();
+
+    assert!(json.contains(r#""enabled":false"#), "{json}");
 }

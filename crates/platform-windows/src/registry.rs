@@ -20,14 +20,19 @@ const KEY: &str = r"HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Set
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RegistryValues {
+    /// `ProxyEnable`: 1 when "use a proxy server" is switched on.
     #[serde(rename = "ProxyEnable", default)]
     pub proxy_enable: Option<u32>,
+    /// `ProxyServer`: `host:port`, `socks=host:port` or per-protocol entries.
     #[serde(rename = "ProxyServer", default)]
     pub proxy_server: Option<String>,
+    /// `ProxyOverride`: the bypass list, `;`-separated.
     #[serde(rename = "ProxyOverride", default)]
     pub proxy_override: Option<String>,
+    /// `AutoConfigURL`: the address of a PAC script.
     #[serde(rename = "AutoConfigURL", default)]
     pub auto_config_url: Option<String>,
+    /// `AutoDetect`: automatic proxy detection (WPAD).
     #[serde(rename = "AutoDetect", default)]
     pub auto_detect: Option<u32>,
 }
@@ -35,8 +40,11 @@ pub struct RegistryValues {
 /// One registry change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Op {
+    /// Set a string value.
     SetString(&'static str, String),
+    /// Set a DWORD value.
     SetDword(&'static str, u32),
+    /// Delete a value (it is fine if it does not exist).
     Remove(&'static str),
 }
 
@@ -53,26 +61,34 @@ pub fn read_script() -> String {
 
 /// Classifies registry values. Anything Hopswitch cannot model exactly becomes
 /// [`ProxyState::Other`] carrying every value, so it can be restored faithfully.
+///
+/// [`ProxyState::Disabled`] means nothing is switched on *and nothing is stored*. Windows keeps
+/// the proxy address and bypass list when the proxy is switched off; that is a state of its own
+/// (`Other { enabled: false }`), so applying a proxy and restoring never loses it.
 pub fn parse_state(values: &RegistryValues) -> ProxyState {
-    let foreign = || ProxyState::Other {
+    let foreign = |enabled: bool| ProxyState::Other {
         raw: serde_json::to_string(values).unwrap_or_default(),
+        enabled,
     };
+    let stored = |value: &Option<String>| value.as_deref().is_some_and(|s| !s.is_empty());
 
-    if values
-        .auto_config_url
-        .as_deref()
-        .is_some_and(|s| !s.is_empty())
-    {
-        return foreign();
+    if stored(&values.auto_config_url) {
+        return foreign(true);
     }
     match values.proxy_enable {
-        None | Some(0) => ProxyState::Disabled,
+        None | Some(0) => {
+            if stored(&values.proxy_server) || stored(&values.proxy_override) {
+                foreign(false)
+            } else {
+                ProxyState::Disabled
+            }
+        }
         Some(1) => values
             .proxy_server
             .as_deref()
             .and_then(|server| parse_server(server, values.proxy_override.as_deref()))
-            .map_or_else(foreign, ProxyState::Manual),
-        Some(_) => foreign(),
+            .map_or_else(|| foreign(true), ProxyState::Manual),
+        Some(_) => foreign(true),
     }
 }
 
@@ -112,12 +128,16 @@ fn parse_server(server: &str, over: Option<&str>) -> Option<ProxyConfig> {
 /// Order matters: the server is written before the proxy is enabled.
 pub fn plan_write(state: &ProxyState) -> Result<Vec<Op>, SystemError> {
     match state {
+        // "Nothing switched on, nothing stored": also removes the address and bypass list a
+        // proxy we applied left behind. A leftover that was there before is `Other` instead.
         ProxyState::Disabled => Ok(vec![
             Op::SetDword("ProxyEnable", 0),
             Op::Remove("AutoConfigURL"),
+            Op::Remove("ProxyServer"),
+            Op::Remove("ProxyOverride"),
         ]),
         ProxyState::Manual(config) => plan_manual(config),
-        ProxyState::Other { raw } => {
+        ProxyState::Other { raw, .. } => {
             let values: RegistryValues = serde_json::from_str(raw)
                 .map_err(|_| SystemError::Unsupported("not a Windows proxy snapshot".to_owned()))?;
             Ok(vec![

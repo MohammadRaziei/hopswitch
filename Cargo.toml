@@ -5,6 +5,9 @@ members = ["crates/core", "crates/storage", "crates/platform-windows", "crates/c
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+# The oldest toolchain the code is built and tested with. Clippy honours it, so it will not
+# suggest APIs newer than this.
+rust-version = "1.75"
 license = "MIT"
 authors = ["Hopswitch contributors"]
 

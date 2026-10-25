@@ -87,10 +87,59 @@ fn a_registry_without_any_proxy_values_reads_as_disabled() {
 }
 
 #[test]
-fn a_leftover_server_with_the_proxy_switched_off_is_still_disabled() {
+fn a_leftover_server_with_the_proxy_switched_off_is_an_inactive_foreign_state() {
+    // Windows keeps the address when the proxy is switched off; losing it would not be a faithful restore.
     let state = read_with(registry(Some(0), Some("127.0.0.1:1"), None, None, None)).unwrap();
 
-    assert_eq!(state, ProxyState::Disabled);
+    assert!(
+        matches!(state, ProxyState::Other { enabled: false, .. }),
+        "{state:?}"
+    );
+}
+
+#[test]
+fn a_leftover_bypass_list_alone_counts_too() {
+    let state = read_with(registry(Some(0), None, Some("<local>"), None, None)).unwrap();
+
+    assert!(
+        matches!(state, ProxyState::Other { enabled: false, .. }),
+        "{state:?}"
+    );
+}
+
+#[test]
+fn empty_strings_are_not_leftovers() {
+    for enable in [None, Some(0)] {
+        let state = read_with(registry(enable, Some(""), Some(""), None, None)).unwrap();
+
+        assert_eq!(state, ProxyState::Disabled, "ProxyEnable = {enable:?}");
+    }
+}
+
+#[test]
+fn an_inactive_foreign_state_is_restored_value_for_value() {
+    let (runner, net) = setup();
+    runner.push_stdout(registry(
+        Some(0),
+        Some("corp:3128"),
+        Some("<local>"),
+        None,
+        None,
+    ));
+    let before = net.read_proxy().unwrap();
+
+    net.write_proxy(&before).unwrap();
+
+    let script = last_script(&runner);
+    assert!(
+        script.contains("-Name 'ProxyServer' -Value 'corp:3128'"),
+        "{script}"
+    );
+    assert!(
+        script.contains("-Name 'ProxyOverride' -Value '<local>'"),
+        "{script}"
+    );
+    assert!(script.contains("-Name 'ProxyEnable' -Value 0"), "{script}");
 }
 
 #[test]
@@ -158,7 +207,10 @@ fn a_pac_script_is_a_foreign_state() {
     ))
     .unwrap();
 
-    assert!(matches!(state, ProxyState::Other { .. }));
+    assert!(
+        matches!(state, ProxyState::Other { enabled: true, .. }),
+        "{state:?}"
+    );
 }
 
 #[test]
@@ -172,14 +224,20 @@ fn per_protocol_proxies_are_a_foreign_state() {
     ))
     .unwrap();
 
-    assert!(matches!(state, ProxyState::Other { .. }));
+    assert!(
+        matches!(state, ProxyState::Other { enabled: true, .. }),
+        "{state:?}"
+    );
 }
 
 #[test]
 fn an_enabled_proxy_without_a_server_is_a_foreign_state() {
     let state = read_with(registry(Some(1), None, None, None, None)).unwrap();
 
-    assert!(matches!(state, ProxyState::Other { .. }));
+    assert!(
+        matches!(state, ProxyState::Other { enabled: true, .. }),
+        "{state:?}"
+    );
 }
 
 #[test]
@@ -239,7 +297,7 @@ fn powershell_is_started_non_interactively_with_an_encoded_script() {
         for flag in ["-NoProfile", "-NonInteractive", "-EncodedCommand"] {
             assert!(call.args.iter().any(|a| a == flag), "missing {flag}");
         }
-        assert!(!script_of(call).is_empty());
+        assert_ne!(script_of(call), "");
     }
 }
 
@@ -362,7 +420,7 @@ fn schemes_the_registry_cannot_express_are_refused_without_touching_anything() {
             matches!(err, SystemError::Unsupported(_)),
             "{scheme}: {err:?}"
         );
-        assert!(runner.calls().is_empty());
+        assert_eq!(runner.calls(), Vec::<RecordedCall>::new());
     }
 }
 
@@ -380,20 +438,23 @@ fn bypass_entries_that_would_corrupt_the_list_are_refused() {
             matches!(err, SystemError::Unsupported(_)),
             "{bad:?}: {err:?}"
         );
-        assert!(runner.calls().is_empty());
+        assert_eq!(runner.calls(), Vec::<RecordedCall>::new());
     }
 }
 
 #[test]
-fn disabling_switches_the_proxy_off_and_removes_a_pac_script_only() {
+fn disabling_leaves_nothing_of_ours_behind() {
+    // `Disabled` means "no proxy settings at all"; an address that was there before is a different
+    // state (an inactive foreign state) and is restored on its own.
     let script = write(&ProxyState::Disabled);
 
     assert!(script.contains("-Name 'ProxyEnable' -Value 0"), "{script}");
-    assert!(script.contains("'AutoConfigURL'"), "{script}");
-    assert!(
-        !script.contains("ProxyServer"),
-        "a leftover server is harmless: {script}"
-    );
+    for name in ["AutoConfigURL", "ProxyServer", "ProxyOverride"] {
+        assert!(
+            script.contains(&format!("Remove-ItemProperty -Path $k -Name '{name}'")),
+            "{name} should be removed: {script}"
+        );
+    }
 }
 
 #[test]
@@ -446,11 +507,12 @@ fn a_foreign_payload_from_somewhere_else_is_refused() {
     let err = net
         .write_proxy(&ProxyState::Other {
             raw: "gsettings:whatever".into(),
+            enabled: true,
         })
         .unwrap_err();
 
     assert!(matches!(err, SystemError::Unsupported(_)), "{err:?}");
-    assert!(runner.calls().is_empty());
+    assert_eq!(runner.calls(), Vec::<RecordedCall>::new());
 }
 
 // ---------- DNS (needs administrator rights; arrives with the elevated helper) ----------
@@ -470,7 +532,7 @@ fn dns_is_explicitly_not_supported_yet() {
         .unwrap_err(),
         SystemError::Unsupported(_)
     ));
-    assert!(runner.calls().is_empty());
+    assert_eq!(runner.calls(), Vec::<RecordedCall>::new());
 }
 
 #[test]

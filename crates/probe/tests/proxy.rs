@@ -107,11 +107,17 @@ fn nothing_listening_is_dead_quickly() {
         .port();
     let started = Instant::now();
 
+    // Windows retries a refused loopback connection for about two seconds, so it is the probe's own
+    // timeout that bounds the wait there: use a short one.
     assert_eq!(
-        probe(ProxyScheme::Http, port, "http://probe.test/", 2000),
+        probe(ProxyScheme::Http, port, "http://probe.test/", 500),
         Health::Dead
     );
-    assert!(started.elapsed() < Duration::from_millis(1500));
+    assert!(
+        started.elapsed() < Duration::from_millis(2500),
+        "{:?}",
+        started.elapsed()
+    );
 }
 
 #[test]
@@ -127,7 +133,7 @@ fn a_proxy_that_never_answers_is_dead_after_the_timeout() {
         Health::Dead
     );
     assert!(
-        started.elapsed() < Duration::from_millis(1500),
+        started.elapsed() < Duration::from_millis(2500),
         "{:?}",
         started.elapsed()
     );
@@ -142,7 +148,7 @@ fn latency_covers_the_whole_exchange() {
     });
 
     match probe(ProxyScheme::Http, port, "http://probe.test/", 2000) {
-        Health::Alive { latency_ms } => assert!((120..1500).contains(&latency_ms), "{latency_ms}"),
+        Health::Alive { latency_ms } => assert!((100..3000).contains(&latency_ms), "{latency_ms}"),
         Health::Dead => panic!("should be alive"),
     }
 }

@@ -186,7 +186,7 @@ fn a_version_1_file_without_groups_still_loads() {
     let profiles = JsonFileRepository::new(&path).load().unwrap();
 
     assert_eq!(profiles.proxy_profiles().len(), 1);
-    assert!(profiles.groups().is_empty());
+    assert_eq!(profiles.groups(), []);
 }
 
 #[test]

@@ -20,7 +20,7 @@ fn every_dns_preset_builds_a_valid_config() {
             .config()
             .unwrap_or_else(|e| panic!("preset `{}` is invalid: {e}", preset.id()));
         assert!(!config.servers().is_empty(), "preset `{}`", preset.id());
-        assert!(!preset.name().trim().is_empty());
+        assert_ne!(preset.name().trim(), "");
     }
 }
 
@@ -30,7 +30,7 @@ fn every_proxy_preset_builds_a_valid_config() {
         preset
             .config()
             .unwrap_or_else(|e| panic!("preset `{}` is invalid: {e}", preset.id()));
-        assert!(!preset.name().trim().is_empty());
+        assert_ne!(preset.name().trim(), "");
     }
 }
 

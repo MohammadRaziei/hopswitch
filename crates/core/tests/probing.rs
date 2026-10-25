@@ -84,8 +84,11 @@ fn a_dns_profile_is_dead_only_when_every_server_is() {
 fn nothing_to_probe_gives_nothing() {
     let prober = FakeProber::new();
 
-    assert!(probe_proxies(&prober, &[], &ConnectivitySettings::default()).is_empty());
-    assert!(prober.calls().is_empty());
+    assert_eq!(
+        probe_proxies(&prober, &[], &ConnectivitySettings::default()),
+        Vec::<hopswitch_core::Probe>::new()
+    );
+    assert_eq!(prober.calls(), Vec::<String>::new());
 }
 
 struct Slow;

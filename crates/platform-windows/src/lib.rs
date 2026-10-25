@@ -5,7 +5,7 @@
 //! `CommandRunner` port, and only [`ProcessRunner`] starts real processes.
 
 mod network;
-mod registry;
+pub mod registry;
 mod runner;
 
 pub use network::WindowsNetwork;

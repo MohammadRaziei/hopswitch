@@ -248,7 +248,7 @@ fn invalid_input_is_reported_clearly_and_saves_nothing() {
         .fails(&["proxy", "add", "Bad", "http://h:0"])
         .to_lowercase()
         .contains("port"));
-    assert!(!e.fails(&["dns", "add", "Bad", "1.2.3"]).is_empty());
+    assert_ne!(e.fails(&["dns", "add", "Bad", "1.2.3"]), "");
     assert!(!e.file("profiles.json").exists());
 }
 
@@ -278,7 +278,7 @@ fn removing_an_active_profile_is_refused_and_removing_an_inactive_one_works() {
     e.ok(&["proxy", "off"]);
     e.ok(&["proxy", "remove", "work"]);
     assert!(!e.ok(&["proxy", "list"]).contains("Work"));
-    assert!(!e.fails(&["proxy", "remove", "work"]).is_empty());
+    assert_ne!(e.fails(&["proxy", "remove", "work"]), "");
 }
 
 #[test]
@@ -553,7 +553,7 @@ fn ping_rejects_bad_settings_before_testing_anything() {
     ] {
         e.fails(&args);
     }
-    assert!(e.prober.calls().is_empty());
+    assert_eq!(e.prober.calls(), Vec::<String>::new());
 }
 
 #[test]
@@ -563,7 +563,7 @@ fn ping_with_nothing_saved_points_to_the_presets() {
     let out = e.ok(&["ping"]);
 
     assert!(out.contains("presets"), "{out}");
-    assert!(e.prober.calls().is_empty());
+    assert_eq!(e.prober.calls(), Vec::<String>::new());
 }
 
 #[test]
@@ -1057,7 +1057,7 @@ fn run_once_with_nothing_to_automate_sends_no_traffic() {
     let out = e.ok(&["auto", "run", "--once"]);
 
     assert!(out.contains("off"), "{out}");
-    assert!(e.prober.calls().is_empty());
+    assert_eq!(e.prober.calls(), Vec::<String>::new());
     assert_eq!(proxy_now(&e), users_proxy());
 }
 
@@ -1069,7 +1069,7 @@ fn run_once_with_the_flag_on_but_nothing_selected_does_nothing() {
     let out = e.ok(&["auto", "run", "--once"]);
 
     assert!(out.contains("off") || out.contains("nothing"), "{out}");
-    assert!(e.prober.calls().is_empty());
+    assert_eq!(e.prober.calls(), Vec::<String>::new());
 }
 
 #[test]
@@ -1104,4 +1104,37 @@ fn run_once_survives_a_selection_that_no_longer_exists() {
         out.contains("Nothing to change") || out.contains("off"),
         "{out}"
     );
+}
+
+// ---------- foreign proxy states ----------
+
+#[test]
+fn status_says_off_for_stored_settings_that_are_not_in_use() {
+    let e = env();
+    e.net
+        .write_proxy(&ProxyState::Other {
+            raw: "{}".into(),
+            enabled: false,
+        })
+        .unwrap();
+
+    let out = e.ok(&["status"]);
+
+    let line = line_with(&out, "proxy:");
+    assert!(line.contains("off") && !line.contains("custom"), "{out}");
+}
+
+#[test]
+fn status_says_custom_for_a_foreign_setup_that_is_in_use() {
+    let e = env();
+    e.net
+        .write_proxy(&ProxyState::Other {
+            raw: "{}".into(),
+            enabled: true,
+        })
+        .unwrap();
+
+    let out = e.ok(&["status"]);
+
+    assert!(line_with(&out, "proxy:").contains("custom setup"), "{out}");
 }

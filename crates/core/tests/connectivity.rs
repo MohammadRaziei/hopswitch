@@ -7,7 +7,7 @@ fn defaults_are_valid_and_sensible() {
     let s = ConnectivitySettings::default();
 
     assert!(s.proxy_target().starts_with("http://"));
-    assert!(!s.dns_domain().is_empty());
+    assert_ne!(s.dns_domain(), "");
     assert_eq!(s.timeout_ms(), 3000);
     assert_eq!(s.interval_secs(), 30);
     assert!(ConnectivitySettings::new(s.proxy_target(), s.dns_domain(), 3000, 30).is_ok());

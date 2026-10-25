@@ -21,3 +21,21 @@
 * **Consequences:** the adapter is verified by fakes only; running it on a real Windows machine
   (`cargo run -p hopswitch-platform-windows --example proxy_smoke`) is a required manual check
   before relying on it.
+
+## Addendum (Step 4b): what `Disabled` means, and why restoring is now exact
+
+The first real-registry run on a CI runner showed that after apply + off the proxy was off but the address
+Hopswitch had written was still stored. Cause: `Disabled` carried nothing and writing it only set
+`ProxyEnable=0`, so it could neither remove what we added nor keep what the user had.
+
+* `ProxyState::Disabled` now means **nothing switched on and nothing stored**. Writing it also removes
+  `ProxyServer`, `ProxyOverride` and `AutoConfigURL`.
+* Settings that are stored but switched off (Windows keeps the address after the proxy is turned off)
+  are read as `ProxyState::Other { enabled: false }` and restored value for value, like any other
+  foreign state. `enabled` says whether a foreign state routes traffic; `status` prints "off (stored
+  proxy settings are kept)" for `false` and "custom setup" for `true`. A session saved before the flag
+  existed reads as `enabled: true` (assume it was in use).
+* The invariant is a test: for fourteen kinds of original registry, apply a proxy, restore the snapshot,
+  and the registry means the same as before (absent, empty and `ProxyEnable=0` count as alike).
+  The CI smoke job checks it on a real registry, with and without a stored address.
+* The pure registry logic is public (`hopswitch_platform_windows::registry`) so these tests can use it.

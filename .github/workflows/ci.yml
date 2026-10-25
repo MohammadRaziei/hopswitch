@@ -36,6 +36,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --no-fail-fast
 
+  # `rust-version` in Cargo.toml is a promise: build and test with exactly that toolchain.
+  msrv:
+    name: test (Rust 1.75, the declared minimum)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.75.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --no-fail-fast
+
   # A real-machine check of the Windows proxy adapter (CHECKLIST Step 4): the runner is a
   # throwaway Windows VM, so changing its proxy settings is safe. It applies a preset
   # through the CLI, reads the registry, restores, and checks the original is back.
@@ -55,6 +65,13 @@ jobs:
           $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
           function Hs { & $hs @args; if ($LASTEXITCODE -ne 0) { throw "hopswitch $args failed ($LASTEXITCODE)" } }
           function Show-Proxy { Get-ItemProperty $key | Select-Object ProxyEnable, ProxyServer, ProxyOverride | Format-List | Out-String }
+          # The registry is back to what it was (an absent value and an empty one count as the same).
+          function Assert-Same($before, $after) {
+            if ([int]$after.ProxyEnable -ne [int]$before.ProxyEnable) { throw 'ProxyEnable was not restored' }
+            foreach ($name in 'ProxyServer', 'ProxyOverride', 'AutoConfigURL') {
+              if ([string]$after.$name -ne [string]$before.$name) { throw "$name was not restored: '$($after.$name)' (was '$($before.$name)')" }
+            }
+          }
 
           $before = Get-ItemProperty $key
           "before:`n$(Show-Proxy)"
@@ -70,12 +87,20 @@ jobs:
           Hs off
           $after = Get-ItemProperty $key
           "after:`n$(Show-Proxy)"
-          # What `off` promises: the proxy is switched off again and no PAC script is left behind.
-          if ([int]$after.ProxyEnable -ne [int]$before.ProxyEnable) { throw 'ProxyEnable was not restored' }
-          if ($after.AutoConfigURL) { throw "unexpected AutoConfigURL: $($after.AutoConfigURL)" }
+          Assert-Same $before $after
           if (((& $hs status | Out-String)) -notmatch 'proxy: off') { throw 'status does not say the proxy is off' }
-          # Known gap (see CHECKLIST, Step 4): a disabled proxy's leftover ProxyServer text is
-          # not restored. Report it, do not fail.
-          if ($after.ProxyServer -ne $before.ProxyServer) {
-            Write-Host "::notice::ProxyServer left behind after off: '$($after.ProxyServer)' (was '$($before.ProxyServer)')"
-          }
+
+          # Second round: the proxy is switched off but Windows still stores an address, which it
+          # does by default after a proxy was used once. Restoring must bring that address back.
+          Set-ItemProperty -Path $key -Name ProxyServer -Value 'corp.example:3128'
+          Set-ItemProperty -Path $key -Name ProxyOverride -Value '<local>'
+          Set-ItemProperty -Path $key -Name ProxyEnable -Value 0 -Type DWord
+          $before = Get-ItemProperty $key
+          "before (stored address):`n$(Show-Proxy)"
+          if (((& $hs status | Out-String)) -notmatch 'proxy: off') { throw 'a stored but switched-off proxy should read as off' }
+          Hs proxy use v2rayn-socks
+          if ((Get-ItemProperty $key).ProxyServer -notmatch '10808') { throw 'the proxy was not applied over the stored address' }
+          Hs off
+          $after = Get-ItemProperty $key
+          "after (stored address):`n$(Show-Proxy)"
+          Assert-Same $before $after

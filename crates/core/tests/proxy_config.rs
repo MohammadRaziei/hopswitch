@@ -9,7 +9,7 @@ fn creates_a_valid_proxy() {
     assert_eq!(p.scheme(), ProxyScheme::Http);
     assert_eq!(p.host(), "127.0.0.1");
     assert_eq!(p.port(), 8080);
-    assert!(p.bypass().is_empty());
+    assert_eq!(p.bypass(), Vec::<String>::new());
 }
 
 #[test]
@@ -160,5 +160,5 @@ fn deserialising_invalid_data_is_rejected() {
 fn bypass_defaults_to_empty_when_missing_in_json() {
     let json = r#"{"scheme":"http","host":"localhost","port":8080}"#;
     let p: ProxyConfig = serde_json::from_str(json).unwrap();
-    assert!(p.bypass().is_empty());
+    assert_eq!(p.bypass(), Vec::<String>::new());
 }
