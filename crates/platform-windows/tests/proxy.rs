@@ -5,7 +5,8 @@ use std::sync::Arc;
 use base64::Engine;
 use hopswitch_core::testing::{FakeRunner, RecordedCall};
 use hopswitch_core::{
-    DnsConfig, DnsState, ProxyConfig, ProxyScheme, ProxyState, SystemError, SystemNetwork,
+    DnsConfig, DnsState, PacConfig, ProxyConfig, ProxyScheme, ProxyState, SystemError,
+    SystemNetwork,
 };
 use hopswitch_platform_windows::WindowsNetwork;
 use serde_json::json;
@@ -197,20 +198,19 @@ fn the_bypass_list_is_split_trimmed_and_cleaned() {
 }
 
 #[test]
-fn a_pac_script_is_a_foreign_state() {
-    let state = read_with(registry(
-        Some(0),
-        None,
-        None,
-        Some("http://wpad/p.pac"),
-        Some(1),
-    ))
-    .unwrap();
+fn a_pac_script_next_to_auto_detect_is_still_a_pac_state() {
+    for detect in [Some(0), Some(1)] {
+        let state = read_with(registry(
+            Some(0),
+            None,
+            None,
+            Some("http://wpad/p.pac"),
+            detect,
+        ))
+        .unwrap();
 
-    assert!(
-        matches!(state, ProxyState::Other { enabled: true, .. }),
-        "{state:?}"
-    );
+        assert_eq!(state, pac("http://wpad/p.pac"), "detect = {detect:?}");
+    }
 }
 
 #[test]
@@ -513,6 +513,112 @@ fn a_foreign_payload_from_somewhere_else_is_refused() {
 
     assert!(matches!(err, SystemError::Unsupported(_)), "{err:?}");
     assert_eq!(runner.calls(), Vec::<RecordedCall>::new());
+}
+
+// ---------- PAC scripts as a state of their own ----------
+
+fn pac(url: &str) -> ProxyState {
+    ProxyState::Pac(PacConfig::new(url).unwrap())
+}
+
+#[test]
+fn a_pac_script_alone_is_a_pac_state() {
+    for enable in [None, Some(0)] {
+        let state = read_with(registry(
+            enable,
+            None,
+            None,
+            Some("http://wpad/p.pac"),
+            None,
+        ))
+        .unwrap();
+
+        assert_eq!(state, pac("http://wpad/p.pac"), "enable = {enable:?}");
+    }
+}
+
+#[test]
+fn a_pac_script_mixed_with_other_settings_stays_a_foreign_state() {
+    let url = Some("http://wpad/p.pac");
+    let mixed = [
+        (
+            "proxy switched on",
+            registry(Some(1), None, None, url, None),
+        ),
+        (
+            "a stored server",
+            registry(Some(0), Some("corp:3128"), None, url, None),
+        ),
+        (
+            "a stored bypass list",
+            registry(Some(0), None, Some("<local>"), url, None),
+        ),
+    ];
+
+    for (name, json) in mixed {
+        let state = read_with(json).unwrap();
+
+        assert!(
+            matches!(state, ProxyState::Other { enabled: true, .. }),
+            "{name}: {state:?}"
+        );
+    }
+}
+
+#[test]
+fn a_pac_address_hopswitch_cannot_model_stays_a_foreign_state() {
+    for url in ["ftp://host/p.pac", "wpad", "http://a/ b.pac"] {
+        let state = read_with(registry(Some(0), None, None, Some(url), None)).unwrap();
+
+        assert!(
+            matches!(state, ProxyState::Other { enabled: true, .. }),
+            "{url}: {state:?}"
+        );
+    }
+}
+
+#[test]
+fn writing_a_pac_state_sets_the_address_and_clears_the_manual_proxy() {
+    let script = write(&pac("http://127.0.0.1:8123/p.pac"));
+
+    assert!(
+        script.contains("-Name 'AutoConfigURL' -Value 'http://127.0.0.1:8123/p.pac'"),
+        "{script}"
+    );
+    assert!(script.contains("-Name 'ProxyEnable' -Value 0"), "{script}");
+    assert!(
+        !script.contains("AutoDetect"),
+        "auto-detect is left alone: {script}"
+    );
+    for gone in ["ProxyServer", "ProxyOverride"] {
+        let removed =
+            script.contains("Remove-ItemProperty") && script.contains(&format!("'{gone}'"));
+        assert!(removed, "{gone} should be removed: {script}");
+    }
+}
+
+#[test]
+fn the_pac_address_goes_live_only_after_the_manual_proxy_is_off() {
+    let script = write(&pac("http://127.0.0.1:8123/p.pac"));
+
+    let enable_off = script.find("'ProxyEnable'").unwrap();
+    let address = script.find("'AutoConfigURL'").unwrap();
+    assert!(enable_off < address, "{script}");
+}
+
+#[test]
+fn a_pac_state_read_earlier_is_written_back_unchanged() {
+    let (runner, net) = setup();
+    runner.push_stdout(registry(None, None, None, Some("http://wpad/p.pac"), None));
+    let state = net.read_proxy().unwrap();
+
+    net.write_proxy(&state).unwrap();
+
+    let script = last_script(&runner);
+    assert!(
+        script.contains("-Name 'AutoConfigURL' -Value 'http://wpad/p.pac'"),
+        "{script}"
+    );
 }
 
 // ---------- DNS (needs administrator rights; arrives with the elevated helper) ----------

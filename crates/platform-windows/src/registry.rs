@@ -8,7 +8,7 @@
 //! `socks=host:port` = SOCKS), `ProxyOverride` (`;`-separated bypass list),
 //! `AutoConfigURL` (PAC script) and `AutoDetect` (WPAD).
 
-use hopswitch_core::{ProxyConfig, ProxyScheme, ProxyState, SystemError};
+use hopswitch_core::{PacConfig, ProxyConfig, ProxyScheme, ProxyState, SystemError};
 use serde::{Deserialize, Serialize};
 
 const KEY: &str = r"HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings";
@@ -72,7 +72,18 @@ pub fn parse_state(values: &RegistryValues) -> ProxyState {
     };
     let stored = |value: &Option<String>| value.as_deref().is_some_and(|s| !s.is_empty());
 
-    if stored(&values.auto_config_url) {
+    if let Some(url) = values.auto_config_url.as_deref().filter(|s| !s.is_empty()) {
+        // A PAC script is its own state only when no manual proxy is in use or stored, so that
+        // writing the state back reproduces the registry. Like every other state, it leaves the
+        // auto-detect value (`AutoDetect`) alone, whatever it is.
+        let alone = values.proxy_enable.unwrap_or(0) == 0
+            && !stored(&values.proxy_server)
+            && !stored(&values.proxy_override);
+        if alone {
+            if let Ok(pac) = PacConfig::new(url) {
+                return ProxyState::Pac(pac);
+            }
+        }
         return foreign(true);
     }
     match values.proxy_enable {
@@ -137,6 +148,15 @@ pub fn plan_write(state: &ProxyState) -> Result<Vec<Op>, SystemError> {
             Op::Remove("ProxyOverride"),
         ]),
         ProxyState::Manual(config) => plan_manual(config),
+        // The manual proxy is cleared first and the address is written last, so the script only
+        // becomes active once no manual proxy is left to compete with it. `AutoDetect` is not
+        // touched, as with a manual proxy, so a snapshot of any state restores it exactly.
+        ProxyState::Pac(pac) => Ok(vec![
+            Op::SetDword("ProxyEnable", 0),
+            Op::Remove("ProxyServer"),
+            Op::Remove("ProxyOverride"),
+            Op::SetString("AutoConfigURL", pac.url().to_owned()),
+        ]),
         ProxyState::Other { raw, .. } => {
             let values: RegistryValues = serde_json::from_str(raw)
                 .map_err(|_| SystemError::Unsupported("not a Windows proxy snapshot".to_owned()))?;

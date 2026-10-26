@@ -1,7 +1,7 @@
 //! The promise of the whole adapter: apply a proxy, restore the snapshot, and the registry is
 //! back to what it was. Checked on the pure registry logic with a tiny in-memory registry.
 
-use hopswitch_core::{ProxyConfig, ProxyScheme, ProxyState};
+use hopswitch_core::{PacConfig, ProxyConfig, ProxyScheme, ProxyState};
 use hopswitch_platform_windows::registry::{parse_state, plan_write, Op, RegistryValues};
 
 fn values(
@@ -68,9 +68,8 @@ fn proxy_to_apply() -> ProxyState {
     ProxyState::Manual(config)
 }
 
-#[test]
-fn applying_then_restoring_brings_every_kind_of_original_back() {
-    let originals = [
+fn originals() -> Vec<(&'static str, RegistryValues)> {
+    vec![
         ("nothing stored", values(None, None, None, None, None)),
         ("switched off", values(Some(0), None, None, None, None)),
         (
@@ -127,7 +126,20 @@ fn applying_then_restoring_brings_every_kind_of_original_back() {
             "enabled without a server",
             values(Some(1), None, None, None, None),
         ),
-    ];
+        (
+            "a PAC script alone",
+            values(None, None, None, Some("http://wpad/p.pac"), None),
+        ),
+        (
+            "a PAC script alone, proxy flag off",
+            values(Some(0), None, None, Some("http://wpad/p.pac"), None),
+        ),
+    ]
+}
+
+#[test]
+fn applying_then_restoring_brings_every_kind_of_original_back() {
+    let originals = originals();
 
     for (name, original) in originals {
         let snapshot = parse_state(&original);
@@ -158,4 +170,55 @@ fn a_clean_registry_stays_clean_so_nothing_of_ours_is_left() {
     assert_eq!(restored.proxy_server, None);
     assert_eq!(restored.proxy_override, None);
     assert_eq!(restored.auto_config_url, None);
+}
+
+fn pac_to_apply() -> ProxyState {
+    ProxyState::Pac(PacConfig::new("http://127.0.0.1:8123/hopswitch.pac").unwrap())
+}
+
+#[test]
+fn applying_a_pac_script_then_restoring_brings_every_kind_of_original_back() {
+    for (name, original) in originals() {
+        let snapshot = parse_state(&original);
+
+        let applied = apply(original.clone(), &plan_write(&pac_to_apply()).unwrap());
+        assert_eq!(
+            parse_state(&applied),
+            pac_to_apply(),
+            "{name}: what we wrote reads back"
+        );
+
+        let restored = apply(applied, &plan_write(&snapshot).unwrap());
+        assert_eq!(
+            meaning(&restored),
+            meaning(&original),
+            "{name}: restored registry differs"
+        );
+    }
+}
+
+#[test]
+fn a_clean_registry_stays_clean_after_a_pac_script_comes_and_goes() {
+    let original = values(None, None, None, None, None);
+    let applied = apply(original.clone(), &plan_write(&pac_to_apply()).unwrap());
+
+    let restored = apply(applied, &plan_write(&parse_state(&original)).unwrap());
+
+    assert_eq!(restored.auto_config_url, None);
+    assert_eq!(restored.proxy_server, None);
+    assert_eq!(restored.proxy_override, None);
+    assert_eq!(restored.auto_detect, None);
+}
+
+#[test]
+fn a_manual_proxy_replaces_a_pac_script_and_back() {
+    let original = values(None, None, None, Some("http://wpad/p.pac"), None);
+    let snapshot = parse_state(&original);
+    assert!(matches!(snapshot, ProxyState::Pac(_)));
+
+    let applied = apply(original.clone(), &plan_write(&proxy_to_apply()).unwrap());
+    assert_eq!(parse_state(&applied), proxy_to_apply());
+
+    let restored = apply(applied, &plan_write(&snapshot).unwrap());
+    assert_eq!(meaning(&restored), meaning(&original));
 }

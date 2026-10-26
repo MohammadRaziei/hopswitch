@@ -522,6 +522,7 @@ impl App {
             None => match self.network.read_proxy() {
                 Ok(ProxyState::Disabled) => "off".to_owned(),
                 Ok(ProxyState::Manual(config)) => format!("{config} (not set by Hopswitch)"),
+                Ok(ProxyState::Pac(pac)) => format!("PAC {pac} (not set by Hopswitch)"),
                 Ok(ProxyState::Other { enabled: false, .. }) => {
                     "off (stored proxy settings are kept)".to_owned()
                 }

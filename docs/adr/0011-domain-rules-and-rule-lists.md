@@ -1,7 +1,12 @@
 # ADR-0011: Domain rules, public rule lists and how they reach the system
 
-* **Status:** proposed. The engine-side numbers below are measured; the Windows measurement is
-  produced by the `PAC benchmark` workflow and must be read before phase 2 is built.
+* **Status:** accepted (2026-10-26). The decision gate (section 10) passed on a real Windows runner:
+  the `PAC benchmark` workflow ran the variants through WinHTTP (`WinHttpGetProxyForUrl`, 535 sample hosts
+  per variant). `bucket-ir` (649 466 bytes) loaded, gave 0 wrong answers, first lookup (download + compile)
+  432.9 ms, mean lookup 250.4 us. `fod` (10 728 bytes): 22.3 ms, 0 wrong. The two object-per-domain variants
+  (2 276 542 and 1 074 053 bytes) both **failed** with `ERROR_WINHTTP_BAD_AUTO_PROXY_SCRIPT` (0x2f87 = 12167),
+  so the compact bucket format is required, not just a size optimisation. Not measured: other PAC clients
+  (Chromium, Firefox, macOS, Linux) and sample sizes beyond 535 hosts.
 * **Context:** ADR-0010 phase 2 = a `Rules` profile ("domain rules"). For Iranian users the main use is
   "local sites go direct, everything else through my proxy" (a foreign exit IP breaks banks and local
   services), and the reverse for developer services that refuse Iranian IPs. Two public lists fit:

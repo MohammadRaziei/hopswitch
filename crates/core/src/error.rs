@@ -22,6 +22,9 @@ pub enum ValidationError {
     /// The proxy URL could not be parsed.
     #[error("malformed proxy url: {0}")]
     MalformedUrl(String),
+    /// The PAC script address is not a usable `http`, `https` or `file` URL.
+    #[error("invalid PAC script address: {0}")]
+    InvalidPacUrl(String),
     /// A bypass-list entry is empty.
     #[error("bypass entries must not be empty")]
     InvalidBypassEntry,

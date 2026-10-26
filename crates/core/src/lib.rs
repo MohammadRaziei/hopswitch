@@ -14,6 +14,7 @@ mod dns;
 mod error;
 mod group;
 mod network;
+mod pac;
 mod presets;
 mod prober;
 mod profile;
@@ -32,6 +33,7 @@ pub use dns::{DnsConfig, MAX_DNS_SERVERS};
 pub use error::ValidationError;
 pub use group::{GroupPolicy, ProxyGroup};
 pub use network::{CommandOutput, CommandRunner, DnsState, ProxyState, SystemError, SystemNetwork};
+pub use pac::PacConfig;
 pub use presets::{
     dns_preset, dns_presets, proxy_preset, proxy_presets, DnsPreset, DnsPresetGroup, ProxyPreset,
 };

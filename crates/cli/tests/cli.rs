@@ -7,7 +7,7 @@ use std::sync::Arc;
 use hopswitch_cli::{run, CliError, Context, UnsupportedNetwork};
 use hopswitch_core::testing::{FakeProber, InMemoryNetwork};
 use hopswitch_core::{
-    DnsState, Health, ProxyConfig, ProxyScheme, ProxyState, SystemError, SystemNetwork,
+    DnsState, Health, PacConfig, ProxyConfig, ProxyScheme, ProxyState, SystemError, SystemNetwork,
 };
 
 struct Env {
@@ -1122,6 +1122,24 @@ fn status_says_off_for_stored_settings_that_are_not_in_use() {
 
     let line = line_with(&out, "proxy:");
     assert!(line.contains("off") && !line.contains("custom"), "{out}");
+}
+
+#[test]
+fn status_shows_the_address_of_a_pac_script_that_hopswitch_did_not_set() {
+    let e = env();
+    e.net
+        .write_proxy(&ProxyState::Pac(
+            PacConfig::new("http://wpad.example/p.pac").unwrap(),
+        ))
+        .unwrap();
+
+    let out = e.ok(&["status"]);
+
+    let line = line_with(&out, "proxy:");
+    assert!(
+        line.contains("PAC http://wpad.example/p.pac (not set by Hopswitch)"),
+        "{out}"
+    );
 }
 
 #[test]

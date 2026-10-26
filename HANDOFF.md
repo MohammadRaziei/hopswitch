@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-25, HEAD `b94f182`, 354 tests green)
+# HANDOFF — Hopswitch (state at 2026-10-26, step 07o, 398 tests green; see the git log for HEAD)
 
 > **Paste-in starter for the new chat** (the user writes Persian, informal; attach the project zip,
 > this file, and the CI results described in §8):
@@ -15,12 +15,13 @@
 
 * **Hopswitch** = a cross-platform desktop **client** that switches the **system proxy** and **system DNS**
   between saved profiles (tray + UI planned). It never runs or ships a proxy server.
-* **Built and tested (pure Rust, 354 tests):** domain model, services with exact snapshot/restore,
+* **Built and tested (pure Rust, 398 tests):** domain model, services with exact snapshot/restore,
   JSON persistence, Windows proxy adapter, a real connectivity prober (DNS / HTTP / SOCKS), auto connect +
   proxy groups ("fastest of ..."), and a full **CLI** (`hopswitch`). **Not built:** the Tauri shell and UI,
   Windows DNS (needs admin), macOS and Linux adapters, per-domain rules.
-* **Waiting on the user (see §8):** the result of the newest CI run and of the manual `PAC benchmark`
-  workflow (real Windows PAC engine). The latter decides how ADR-0011 phase 2 (domain rules) is built.
+* **Phase 2 is under way.** CI is green and the `PAC benchmark` passed the ADR-0011 gate on real Windows
+  (details in §10). Done: `RuleList` (importer/normaliser) and `ProxyState::Pac(PacConfig)` (core, Windows
+  adapter, CLI `status`). Next: §9 step 2.2 (`Direct` + `Rules` profiles).
 * **Process is strict:** TDD (red seen before green), quality gate before every commit, conventional
   commits, zip the whole project after every step (`present_files`).
 
@@ -76,7 +77,7 @@ hopswitch/
 └── .github/workflows/    # ci.yml (lint, test x3 OS, msrv, windows-proxy-smoke), pac-bench.yml (manual)
 ```
 
-Tests live in `crates/*/tests/` (public API). Per-crate counts above sum to 354.
+Tests live in `crates/*/tests/` (public API). The per-crate counts above were written at 354 tests; the total is now 398 (rule list +23, PAC state +21).
 
 ## 4. Domain model and the invariants that matter
 
@@ -202,30 +203,31 @@ and QuickJS (0 wrong answers in 174 723 hosts). **Observed on a real Windows run
   Windows `hopswitch-probe --test proxy` target. **The failing test's name was not in the truncated log**; the fix
   (looser timing: refused loopback connects take ~2 s on Windows, `thread::sleep` can wake early) is a best guess.
   If it fails again, ask for the lines `---- <test name> stdout ----` and the next 10 lines.
-* `tools/pac-bench/bench.ps1` (C# P/Invoke of `WinHttpGetProxyForUrl` inside PowerShell) has **never been run**.
-  `pwsh` is not available in the sandbox. The same holds for the PowerShell in the CI smoke job's second round.
-* Windows' PAC engine with a ~650 KB script (ADR-0011 decision gate). The exact PAC size cap in Chromium (its
+* `pwsh` is not available in the sandbox, so PowerShell is only ever verified by the user's CI runs.
+* PAC clients other than WinHTTP (Chromium, Firefox, macOS, Linux). The exact PAC size cap in Chromium (its
   fetcher defines one; the value was not visible in what was read; a third-party note says 1 MB).
+* Real Windows behaviour of the new `Pac` write (clear the manual proxy, then set `AutoConfigURL`): only the
+  pure registry logic is tested. The next CI smoke run does not exercise it yet; add a PAC round to
+  `windows-proxy-smoke` when the local PAC server exists.
 * Preset values against official docs (Shecan was confirmed through third-party sources; Electro omitted).
 * Tauri, the UI, macOS and Linux were never built or run. The sandbox cannot run a GUI.
 
 **Waiting on the user (ask for these first):**
 1. Push the newest zip and paste the results of the **CI run** (all four jobs).
-2. Run **Actions → PAC benchmark → Run workflow** and paste the job *Summary* table (variant, bytes, first
-   lookup ms, mean lookup µs, wrong, status) and any error text.
+2. (Done 2026-10-26: CI green; PAC benchmark table received, see §10.)
 3. Optional manual checks on his own Windows machine: `hopswitch auto run --once`, then `hopswitch auto run`.
 4. Upload `design/logo/export/social-preview.png` in the repo settings (Social preview).
 
 ## 9. What to do next (ordered)
 
-1. **Read the CI and PAC results** and fix what they show (one commit per fix, zip, checklist).
-2. **Apply the ADR-0011 decision gate.** Pass = WinHTTP loads `bucket-ir`, answers every sample host correctly,
-   first lookup (download + compile) < 2 s. Then build phase 2 with TDD, in this order:
-   1. `ProxyState::Pac(PacConfig)` as a first-class state (today a PAC is read as `Other`): Windows `AutoConfigURL`
+1. ~~Read the CI and PAC results~~ (done: CI green).
+2. ~~Apply the ADR-0011 decision gate~~ **PASSED** (§10). Build phase 2 with TDD, in this order
+   (items 1 and 3 are DONE in step 07o, start at item 2):
+   1. **DONE** `ProxyState::Pac(PacConfig)` as a first-class state (today a PAC is read as `Other`): Windows `AutoConfigURL`
       with no manual proxy; keep restore exactness (extend `tests/restore.rs`); update CLI `status`.
    2. A built-in **`Direct`** profile and a **`Rules`** profile in `Profiles` (ordered rules + default target; targets
       must exist; first match wins; user rules before list rules; domain-suffix matching).
-   3. **Rule lists**: importer for the two formats (plain `domains.txt`, dotted `.example.com`), normalise
+   3. **DONE** **Rule lists** (`RuleList`, `ListFormat`, `ImportReport`, `add_suffix`): importer for the two formats (plain `domains.txt`, dotted `.example.com`), normalise
       (lowercase, strip dot, dedupe, drop+count invalid, drop entries covered by a parent), one `.ir` suffix rule
       instead of 69 k entries.
    4. **PAC generator in Rust** (the Python spike in `tools/pac-bench/make_pac.py` is the reference): compact
@@ -265,6 +267,14 @@ and QuickJS (0 wrong answers in 174 723 hosts). **Observed on a real Windows run
 * **PAC sizes measured:** object per domain 2 276 532 B; `.ir` as one rule 1 074 041 B; **compact buckets + `.ir`
   rule 649 448 B** (254 KB gzip); FOD 10 718 B. Load ≈ 10 ms, 4–7 µs per lookup in V8 and QuickJS.
   Third-party notes claim Chromium re-evaluates PAC often; unverified.
+* **Windows PAC engine measured (2026-10-26, `PAC benchmark` run, 535 sample hosts per variant):**
+  `bucket-ir` 649 466 B -> ok, 0 wrong, first lookup (download + compile) 432.9 ms, mean 250.4 us;
+  `fod` 10 728 B -> ok, 0 wrong, 22.3 ms, 280.5 us; `object-full` 2 276 542 B and `object-ir` 1 074 053 B ->
+  both FAILED in `Resolve` with 0x2f87 (`ERROR_WINHTTP_BAD_AUTO_PROXY_SCRIPT`, 12167). The compact bucket
+  format is therefore mandatory. The generator in Rust must reproduce `make_pac.py`'s `bucket-ir` output.
+* **Decision in step 07o:** a PAC is `ProxyState::Pac` only when no manual proxy is in use or stored; `AutoDetect`
+  is never read into the state nor written (same as for manual proxies), which keeps restore exact. A PAC with
+  a stored server, proxy switched on, or an address Hopswitch cannot model stays `Other`.
 
 ## 11. Design, theme, logo
 

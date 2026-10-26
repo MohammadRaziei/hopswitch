@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{DnsConfig, ProxyConfig};
+use crate::{DnsConfig, PacConfig, ProxyConfig};
 
 /// What the system proxy looked like (or should look like).
 ///
@@ -23,7 +23,14 @@ pub enum ProxyState {
     Disabled,
     /// A manual proxy that Hopswitch understands.
     Manual(ProxyConfig),
-    /// Anything else (PAC script, auto-detect, per-protocol proxies, ...).
+    /// A PAC script and nothing else: no manual proxy in use or stored, no auto-detect.
+    ///
+    /// Adapters report this only when the setting is exactly this and no more, so that writing the
+    /// state back reproduces the original. Anything that mixes a PAC script with other settings is
+    /// [`ProxyState::Other`].
+    Pac(PacConfig),
+    /// Anything else (auto-detect, per-protocol proxies, a PAC script combined with other
+    /// settings, ...).
     ///
     /// `raw` is an adapter-defined payload that the same adapter can write back
     /// to reproduce the original state exactly; core treats it as opaque.
