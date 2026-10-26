@@ -7,6 +7,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # The PAC generator tests run the script in Node (preinstalled on the runners). With this set a
+  # missing Node fails the test instead of skipping it, so the check cannot silently vanish.
+  HOPSWITCH_REQUIRE_NODE: "1"
 
 jobs:
   # fmt + clippy on one OS only: new clippy versions add lints over time, and a lint failure

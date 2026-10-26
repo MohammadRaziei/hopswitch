@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-26, step 07q, 433 tests green; see the git log for HEAD)
+# HANDOFF — Hopswitch (state at 2026-10-26, step 07r, 444 tests green; see the git log for HEAD)
 
 > **Paste-in starter for the new chat** (the user writes Persian, informal; attach the project zip,
 > this file, and the CI results described in §8):
@@ -15,13 +15,13 @@
 
 * **Hopswitch** = a cross-platform desktop **client** that switches the **system proxy** and **system DNS**
   between saved profiles (tray + UI planned). It never runs or ships a proxy server.
-* **Built and tested (pure Rust, 433 tests):** domain model, services with exact snapshot/restore,
+* **Built and tested (pure Rust, 444 tests):** domain model, services with exact snapshot/restore,
   JSON persistence, Windows proxy adapter, a real connectivity prober (DNS / HTTP / SOCKS), auto connect +
   proxy groups ("fastest of ..."), and a full **CLI** (`hopswitch`). **Not built:** the Tauri shell and UI,
   Windows DNS (needs admin), macOS and Linux adapters, per-domain rules.
 * **Phase 2 is under way.** CI is green and the `PAC benchmark` passed the ADR-0011 gate on real Windows
   (details in §10). Done: `RuleList` (importer/normaliser) and `ProxyState::Pac(PacConfig)` (core, Windows
-  adapter, CLI `status`). Rules profiles exist in the model (step 07q). Next: §9 step 4, the PAC generator in Rust.
+  adapter, CLI `status`). Rules profiles exist in the model (07q) and the PAC generator exists (07r). Next: §9 step 5, the local PAC server.
 * **Process is strict:** TDD (red seen before green), quality gate before every commit, conventional
   commits, zip the whole project after every step (`present_files`).
 
@@ -77,7 +77,7 @@ hopswitch/
 └── .github/workflows/    # ci.yml (lint, test x3 OS, msrv, windows-proxy-smoke), pac-bench.yml (manual)
 ```
 
-Tests live in `crates/*/tests/` (public API). The per-crate counts above were written at 354 tests; the total is now 433 (rule list +23, PAC state +21, rules profiles +35).
+Tests live in `crates/*/tests/` (public API). The per-crate counts above were written at 354 tests; the total is now 444 (rule list +23, PAC state +21, rules profiles +35, PAC generator +11).
 
 ## 4. Domain model and the invariants that matter
 
@@ -233,7 +233,8 @@ and QuickJS (0 wrong answers in 174 723 hosts). **Observed on a real Windows run
    3. **DONE** **Rule lists** (`RuleList`, `ListFormat`, `ImportReport`, `add_suffix`): importer for the two formats (plain `domains.txt`, dotted `.example.com`), normalise
       (lowercase, strip dot, dedupe, drop+count invalid, drop entries covered by a parent), one `.ir` suffix rule
       instead of 69 k entries.
-   4. **PAC generator in Rust** (the Python spike in `tools/pac-bench/make_pac.py` is the reference): compact
+   4. **DONE (07r)** **PAC generator in Rust** (`PacPlan::new(default).with_rule(..).with_list(..).generate()`,
+      `PacPlan::from_profile(&profile, resolver)`; see §10 for what is verified) — original brief: (the Python spike in `tools/pac-bench/make_pac.py` is the reference): compact
       bucket format, ES3 only, plain host names `DIRECT`, lowercase, `hasOwnProperty` guard. Must pass the same
       exhaustive reference test (every listed domain, a subdomain of each, near-misses, look-alikes) run with Node in CI.
       Budget: hard 1 000 000 bytes, target 750 000.
@@ -275,6 +276,20 @@ and QuickJS (0 wrong answers in 174 723 hosts). **Observed on a real Windows run
   `fod` 10 728 B -> ok, 0 wrong, 22.3 ms, 280.5 us; `object-full` 2 276 542 B and `object-ir` 1 074 053 B ->
   both FAILED in `Resolve` with 0x2f87 (`ERROR_WINHTTP_BAD_AUTO_PROXY_SCRIPT`, 12167). The compact bucket
   format is therefore mandatory. The generator in Rust must reproduce `make_pac.py`'s `bucket-ir` output.
+* **PAC generator (step 07r) results:** `crates/core/src/pac_script.rs`. Iran list with the `.ir` rule: 649 575 bytes
+  (the spike's `bucket-ir`: 649 448), 30 ms to generate, 0 wrong on 327 790 lookups in Node; `fod` 9 778 bytes.
+  Tests (`crates/core/tests/pac_script.rs`) run the script in Node and compare with the product's own matching
+  (`RuleList::matches`, rule order) on ~64 000 hosts, including look-alikes, upper case, trailing dots and
+  host names such as `constructor.com`; breaking the generator on purpose is caught (two mutations tried; the
+  `hasOwnProperty` guard has no observable effect and is purely defensive). **Node is required in CI**
+  (`HOPSWITCH_REQUIRE_NODE=1` in `ci.yml`); locally the Node tests skip with a message when Node is missing.
+  **Not yet verified on WinHTTP**: the script differs from the spike's (`A[]` answer table, `inList`, trailing
+  dot handling). The `PAC benchmark` workflow now builds `rust-bucket-ir` / `rust-fod` with
+  `cargo run -p hopswitch-core --example gen_pac` and requires them to pass; it also prints what WinHTTP returns
+  for `PROXY`, `HTTPS`, `SOCKS`, `SOCKS4`, `SOCKS5` (information only). **SOCKS5 inside a PAC on Windows is
+  unverified** and matters because most users run SOCKS5 proxies (v2rayN): read that table before the local PAC
+  server is wired to the Windows adapter. Known gaps by design: IPv4 literals are matched like host names (a rule
+  `0.1` would match `10.0.0.1`); a group target is resolved by the caller (`from_profile`'s resolver).
 * **Decision in step 07o:** a PAC is `ProxyState::Pac` only when no manual proxy is in use or stored; `AutoDetect`
   is never read into the state nor written (same as for manual proxies), which keeps restore exact. A PAC with
   a stored server, proxy switched on, or an address Hopswitch cannot model stays `Other`.

@@ -34,6 +34,17 @@ themselves, and the exact size cap in Chromium. Its source defines a maximum PAC
 (`pac_file_fetcher_impl.cc`; the value was not visible in what was read) and third-party notes quote
 1 MB. So the budget is a hard 1 000 000 bytes and a target of 750 000.
 
+## Implementation notes (step 07r)
+
+The generator is `PacPlan` in `crates/core/src/pac_script.rs`. Layers answer in this order: the user's rules
+(a linear scan, in order), each list (a bucket table; a single-label entry such as `ir` is stored as `1` for
+the whole TLD), then the default. Plain host names are `DIRECT`; hosts are lower-cased and one trailing dot is
+removed. A script over 1 000 000 bytes is an error (`PacError::TooLarge`), never a truncated script. On the
+real lists the Rust output is 649 575 bytes (Iran, `.ir` as one rule) and 9 778 bytes (FOD). Correctness is
+checked by running the script in Node against `RuleList::matches` and the rule order. Windows' engine is
+asked again by the `PAC benchmark` workflow (`rust-bucket-ir`, `rust-fod`), and the same run reports how
+WinHTTP treats the `SOCKS5` keyword, which is not yet known.
+
 ## Decisions
 
 1. **A `Rules` profile is an ordered list of rules plus a default target.** A rule matches a domain

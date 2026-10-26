@@ -15,6 +15,7 @@ mod error;
 mod group;
 mod network;
 mod pac;
+mod pac_script;
 mod presets;
 mod prober;
 mod profile;
@@ -35,6 +36,7 @@ pub use error::ValidationError;
 pub use group::{GroupPolicy, ProxyGroup};
 pub use network::{CommandOutput, CommandRunner, DnsState, ProxyState, SystemError, SystemNetwork};
 pub use pac::PacConfig;
+pub use pac_script::{PacError, PacPlan, PacRoute, PAC_MAX_BYTES, PAC_TARGET_BYTES};
 pub use presets::{
     dns_preset, dns_presets, proxy_preset, proxy_presets, DnsPreset, DnsPresetGroup, ProxyPreset,
 };

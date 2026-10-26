@@ -8,13 +8,17 @@
   the expected answer, and time it. The first lookup includes downloading and compiling the script.
   A variant that cannot be loaded (for example because it is too big) is reported, not hidden.
 
-  Exit code 1 only if the variants we intend to ship (bucket-ir, fod) fail or give a wrong answer.
+  Exit code 1 only if the variants we intend to ship (bucket-ir, fod, and the same two built by the Rust
+  generator: rust-bucket-ir, rust-fod) fail or give a wrong answer.
+
+  After the variants it asks what WinHTTP makes of the PAC keywords PROXY, HTTPS, SOCKS, SOCKS4 and
+  SOCKS5. That table is information only and never fails the run.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$PacDir,
   [int]$Port = 8765,
-  [string[]]$Variants = @('object-full', 'object-ir', 'bucket-ir', 'fod'),
-  [string[]]$MustPass = @('bucket-ir', 'fod')
+  [string[]]$Variants = @('object-full', 'object-ir', 'bucket-ir', 'fod', 'rust-bucket-ir', 'rust-fod'),
+  [string[]]$MustPass = @('bucket-ir', 'fod', 'rust-bucket-ir', 'rust-fod')
 )
 $ErrorActionPreference = 'Stop'
 
@@ -71,6 +75,22 @@ public static class WinHttpPac
 
     public static void Close(IntPtr session) { WinHttpCloseHandle(session); }
 
+    /// <summary>What WinHTTP returned, unmodified: the access type and the proxy string.</summary>
+    public static string ResolveRaw(IntPtr session, string url, string pacUrl)
+    {
+        AutoProxyOptions options = new AutoProxyOptions();
+        options.Flags = WINHTTP_AUTOPROXY_CONFIG_URL;
+        options.AutoConfigUrl = pacUrl;
+        options.AutoLogonIfChallenged = false;
+        ProxyInfo info;
+        if (!WinHttpGetProxyForUrl(session, url, ref options, out info))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        string text = "type=" + info.AccessType + " proxy=" + (info.Proxy == IntPtr.Zero ? "" : Marshal.PtrToStringUni(info.Proxy));
+        if (info.Proxy != IntPtr.Zero) GlobalFree(info.Proxy);
+        if (info.ProxyBypass != IntPtr.Zero) GlobalFree(info.ProxyBypass);
+        return text;
+    }
+
     /// <summary>"DIRECT" or "PROXY host:port", as the PAC script decided.</summary>
     public static string Resolve(IntPtr session, string url, string pacUrl)
     {
@@ -98,6 +118,7 @@ $server = Start-Process -FilePath 'python' `
   -ArgumentList @('-m', 'http.server', "$Port", '--bind', '127.0.0.1', '--directory', $PacDir) `
   -PassThru -WindowStyle Hidden
 $rows = @()
+$probe = @()
 $failed = $false
 try {
   # wait until the server answers
@@ -142,12 +163,27 @@ try {
     if ($row.status -ne 'ok' -and $MustPass -contains $variant) { $failed = $true }
     $rows += [pscustomobject]$row
   }
+
+  # Information only: what does WinHTTP return for each PAC keyword? (Hopswitch's proxies are mostly SOCKS5.)
+  $probeDir = Join-Path $PacDir 'probe'
+  New-Item -ItemType Directory -Force -Path $probeDir | Out-Null
+  foreach ($keyword in @('PROXY', 'HTTPS', 'SOCKS', 'SOCKS4', 'SOCKS5')) {
+    $file = "keyword-$($keyword.ToLower()).pac"
+    $body = 'function FindProxyForURL(url, host) { return "' + $keyword + ' 127.0.0.1:9"; }'
+    Set-Content -Path (Join-Path $probeDir $file) -Value $body -Encoding ascii
+    $session = [WinHttpPac]::Open()
+    try { $raw = [WinHttpPac]::ResolveRaw($session, 'http://example.com/', "http://127.0.0.1:$Port/probe/$file") }
+    catch { $raw = "FAILED: $($_.Exception.Message)" }
+    finally { [WinHttpPac]::Close($session) }
+    $probe += [pscustomobject]@{ keyword = $keyword; winhttp_returned = $raw }
+  }
 }
 finally {
   Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
 }
 
 $rows | Format-Table -AutoSize | Out-String | Write-Host
+$probe | Format-Table -AutoSize | Out-String | Write-Host
 
 if ($env:GITHUB_STEP_SUMMARY) {
   $lines = @(
@@ -161,6 +197,8 @@ if ($env:GITHUB_STEP_SUMMARY) {
   foreach ($r in $rows) {
     $lines += "| $($r.variant) | $('{0:N0}' -f $r.bytes) | $($r.first_ms) | $($r.lookup_us) | $($r.wrong) | $($r.status) |"
   }
+  $lines += @('', '### What WinHTTP returns for each PAC keyword', '', '| keyword in the script | WinHTTP returned |', '| --- | --- |')
+  foreach ($p in $probe) { $lines += "| $($p.keyword) 127.0.0.1:9 | $($p.winhttp_returned) |" }
   Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ($lines -join "`n")
 }
 

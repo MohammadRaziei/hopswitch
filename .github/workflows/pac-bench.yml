@@ -28,6 +28,10 @@ jobs:
           "iran: $((Get-Content data/iran.txt).Count) lines, fod: $((Get-Content data/fod.txt).Count) lines"
       - name: Generate the PAC variants
         run: python tools/pac-bench/make_pac.py --iran data/iran.txt --fod data/fod.txt --out build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Generate the PAC with the Rust generator (the real product output)
+        run: cargo run -p hopswitch-core --example gen_pac -- --iran data/iran.txt --fod data/fod.txt --out build
       - name: Check every answer in V8 (Node)
         run: python tools/pac-bench/verify_local.py build --engine node
       - name: Run them through WinHTTP

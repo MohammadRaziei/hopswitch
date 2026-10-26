@@ -24,6 +24,7 @@ CI runs the same steps in `.github/workflows/pac-bench.yml` and prints a table i
 | `object-ir` | the 69 k `.ir` entries replaced by one `*.ir` rule |
 | `bucket-ir` | `*.ir` rule + domains grouped by TLD and first two letters, searched with `indexOf` |
 | `fod` | the FOD list: PROXY for listed domains, DIRECT for the rest |
+| `rust-bucket-ir`, `rust-fod` | the same two as built by the product's Rust generator (`cargo run -p hopswitch-core --example gen_pac -- --iran data/iran.txt --fod data/fod.txt --out build`, after `make_pac.py`, which writes the samples they reuse) |
 
 The generated JavaScript is ES3 on purpose (no `let`, arrow functions or trailing commas).
 The sample hosts include sub-domains, look-alikes, upper case, plain host names and names such as
