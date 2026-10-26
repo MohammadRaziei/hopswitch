@@ -1,11 +1,11 @@
 # HANDOFF — Hopswitch (state at 2026-10-26, step 07s, 446 tests green; see the git log for HEAD)
 
 > **Paste-in starter for the new chat** (the user writes Persian, informal; attach the project zip,
-> this file, and the CI results described in §8):
+> this file; **do not ask him to paste CI results, read them yourself, see §8**):
 >
 > «سلام! پروژه‌ی Hopswitch رو از چت قبلی ادامه می‌دیم. zip پروژه و HANDOFF.md پیوست شده.
-> اول `HANDOFF.md`، `AGENT.md`، `CHECKLIST.md` و `docs/adr/*` رو بخون. بعد نتیجه‌ی آخرین اجرای CI و
-> جدول workflow «PAC benchmark» رو که پایین فرستادم بررسی کن و طبق بخش ۹ ادامه بده.»
+> اول `HANDOFF.md`، `AGENT.md`، `CHECKLIST.md` و `docs/adr/*` رو بخون. نتیجه‌ی CI رو خودت از شاخه‌ی
+> `ci-report` ریپو (`mohammadraziei/hopswitch`) بخون و طبق بخش ۹ ادامه بده.»
 >
 > Reply in Persian (casual, friendly). Code, comments, commit messages and docs stay in English.
 
@@ -212,8 +212,30 @@ and QuickJS (0 wrong answers in 174 723 hosts). **Observed on a real Windows run
 * Preset values against official docs (Shecan was confirmed through third-party sources; Electro omitted).
 * Tauri, the UI, macOS and Linux were never built or run. The sandbox cannot run a GUI.
 
+**Reading CI results yourself (the user is tired of relaying them, so never ask him to paste any).** The repo is
+public: `https://github.com/mohammadraziei/hopswitch`, default branch `master`. After every push the
+`failure report` job of each workflow writes a short Markdown report to the **`ci-report` branch**; fetch it with
+`curl` from the sandbox (`raw.githubusercontent.com` and `github.com` are allowed; the unauthenticated
+`api.github.com` is usually rate-limited, so do not rely on it):
+
+* `https://raw.githubusercontent.com/mohammadraziei/hopswitch/ci-report/ci.md` — the CI workflow: per-job results,
+  and for each failed job the failed step plus the log lines that say why (failed test names and panics, compiler
+  and clippy errors, `##[error]` lines).
+* `https://raw.githubusercontent.com/mohammadraziei/hopswitch/ci-report/pac-bench.md` — the PAC benchmark: the
+  WinHTTP table and the keyword table (runs by itself when a push touches the PAC generator, the list importer,
+  `tools/pac-bench`, `tools/ci` or its own file).
+
+Check that the report's `commit:` line equals the HEAD you expect (`git log -1` in the zip); `raw` is cached for a few
+minutes, so retry after a minute if it is the previous commit's report. If the commit never appears the push did not
+happen or CI did not start: say so, do not guess. The scripts are `tools/ci/report.py` (tested by
+`tools/ci/test_report.py`, also run in the `lint` job) and `tools/ci/publish.sh`. **Not verified end to end:** they
+were tested on fixtures, on real `cargo test` / `clippy` output and against a local bare repository; the first real
+run on GitHub is the first time the whole chain runs. If `ci.md` does not appear after a push, the likely causes are
+the `report` job's token permissions (`contents: write`; a repository setting "Workflow permissions: read only" may
+override it) or a bug in these two scripts.
+
 **Waiting on the user (ask for these first):**
-1. Push the newest zip and paste the results of the **CI run** (all four jobs).
+1. (Done: the user pushes; nothing to paste. Ask only for things the reports cannot show.)
 2. (Done 2026-10-26: CI green; PAC benchmark table received, see §10.)
 3. Optional manual checks on his own Windows machine: `hopswitch auto run --once`, then `hopswitch auto run`.
 4. Upload `design/logo/export/social-preview.png` in the repo settings (Social preview).

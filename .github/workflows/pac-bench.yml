@@ -2,18 +2,29 @@ name: PAC benchmark
 
 # A measurement, not a gate: how big a PAC script for the real Iran / FOD lists can be and still
 # work in Windows' own PAC engine (WinHTTP). See docs/adr/0011-domain-rules-and-rule-lists.md.
-# Run it by hand (Actions -> PAC benchmark -> Run workflow) or by touching tools/pac-bench.
+# Runs by itself when a push touches the PAC generator, the list importer, tools/pac-bench or this
+# file, and by hand (Actions -> PAC benchmark -> Run workflow). The result is also written to the
+# `ci-report` branch (file pac-bench.md), see the report job at the bottom.
 on:
   workflow_dispatch:
   push:
     paths:
       - 'tools/pac-bench/**'
+      - 'tools/ci/**'
+      - 'crates/core/src/pac_script.rs'
+      - 'crates/core/src/rule_list.rs'
+      - 'crates/core/examples/**'
       - '.github/workflows/pac-bench.yml'
+
+concurrency:
+  group: pac-bench-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows:
     name: PAC through WinHTTP
     runs-on: windows-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -37,3 +48,39 @@ jobs:
       - name: Run them through WinHTTP
         shell: pwsh
         run: ./tools/pac-bench/bench.ps1 -PacDir build
+      - name: Keep the result table for the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pac-summary
+          path: build/summary.md
+          if-no-files-found: ignore
+
+  report:
+    name: failure report
+    if: always()
+    needs: [windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: pac-summary
+          path: pac-summary
+      - name: Build the report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/ci/report.py --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --skip "failure report" --extra pac-summary/summary.md --out report.md
+      - name: Show it on the run page
+        run: cat report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish it to the ci-report branch
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash tools/ci/publish.sh report.md pac-bench.md

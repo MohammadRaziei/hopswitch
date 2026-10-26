@@ -1,9 +1,16 @@
 name: CI
 
 on:
+  # Every branch, so a push to any branch gets a result (and a report): the user pushes, we read.
   push:
-    branches: [master]
+    branches: ['**']
   pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes the older run pointless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,6 +24,7 @@ jobs:
   lint:
     name: fmt + clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -25,10 +33,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets -- -D warnings
+      # Broken intra-doc links and bad doc markup are errors, not warnings nobody reads.
+      - run: cargo doc --no-deps --workspace
+        env:
+          RUSTDOCFLAGS: -D warnings
+      - name: Tests of the CI report script
+        run: python3 -m unittest discover -s tools/ci -v
 
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -43,6 +58,7 @@ jobs:
   msrv:
     name: test (Rust 1.75, the declared minimum)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.75.0
@@ -55,6 +71,7 @@ jobs:
   windows-proxy-smoke:
     name: Windows proxy adapter (real registry)
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -107,3 +124,33 @@ jobs:
           $after = Get-ItemProperty $key
           "after (stored address):`n$(Show-Proxy)"
           Assert-Same $before $after
+
+  # Runs after every other job, green or red, and writes what happened to the `ci-report` branch
+  # (file ci.md): the failed jobs with the lines of their logs that say why. Whoever pushed does not
+  # have to copy anything from this page; the report can be read at
+  # https://raw.githubusercontent.com/<owner>/<repo>/ci-report/ci.md
+  # It never fails the run itself (a report that cannot be written is a warning).
+  report:
+    name: failure report
+    if: always()
+    needs: [lint, test, msrv, windows-proxy-smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/ci/report.py --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" --skip "failure report" --out report.md
+      - name: Show it on the run page
+        run: cat report.md >> "$GITHUB_STEP_SUMMARY"
+      # Pushes of this repository only: a pull request from a fork has a read-only token.
+      - name: Publish it to the ci-report branch
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash tools/ci/publish.sh report.md ci.md

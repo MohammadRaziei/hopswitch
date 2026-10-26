@@ -185,21 +185,22 @@ finally {
 $rows | Format-Table -AutoSize | Out-String | Write-Host
 $probe | Format-Table -AutoSize | Out-String | Write-Host
 
-if ($env:GITHUB_STEP_SUMMARY) {
-  $lines = @(
-    '### PAC scripts through the real WinHTTP engine',
-    '',
-    "$($hosts.Count) sample hosts per variant. 'first' includes downloading and compiling the script.",
-    '',
-    '| variant | bytes | first lookup (ms) | mean lookup (us) | wrong | status |',
-    '| --- | ---: | ---: | ---: | ---: | --- |'
-  )
-  foreach ($r in $rows) {
-    $lines += "| $($r.variant) | $('{0:N0}' -f $r.bytes) | $($r.first_ms) | $($r.lookup_us) | $($r.wrong) | $($r.status) |"
-  }
-  $lines += @('', '### What WinHTTP returns for each PAC keyword', '', '| keyword in the script | WinHTTP returned |', '| --- | --- |')
-  foreach ($p in $probe) { $lines += "| $($p.keyword) 127.0.0.1:9 | $($p.winhttp_returned) |" }
-  Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ($lines -join "`n")
+$lines = @(
+  '### PAC scripts through the real WinHTTP engine',
+  '',
+  "$($hosts.Count) sample hosts per variant. 'first' includes downloading and compiling the script.",
+  '',
+  '| variant | bytes | first lookup (ms) | mean lookup (us) | wrong | status |',
+  '| --- | ---: | ---: | ---: | ---: | --- |'
+)
+foreach ($r in $rows) {
+  $lines += "| $($r.variant) | $('{0:N0}' -f $r.bytes) | $($r.first_ms) | $($r.lookup_us) | $($r.wrong) | $($r.status) |"
 }
+$lines += @('', '### What WinHTTP returns for each PAC keyword', '', '| keyword in the script | WinHTTP returned |', '| --- | --- |')
+foreach ($p in $probe) { $lines += "| $($p.keyword) 127.0.0.1:9 | $($p.winhttp_returned) |" }
+$summary = $lines -join "`n"
+# Also kept as a file: the workflow's report job publishes it (a step summary cannot be read by tools).
+Set-Content -Path (Join-Path $PacDir 'summary.md') -Value $summary -Encoding utf8
+if ($env:GITHUB_STEP_SUMMARY) { Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summary }
 
 if ($failed) { Write-Error "A variant we intend to ship failed: see the table above."; exit 1 }
