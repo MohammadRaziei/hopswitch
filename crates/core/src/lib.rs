@@ -20,6 +20,7 @@ mod profile;
 mod profiles;
 mod proxy;
 mod repository;
+mod rule_list;
 mod service;
 mod session;
 
@@ -39,6 +40,7 @@ pub use profile::{DnsProfile, ProxyProfile, MAX_NAME_CHARS};
 pub use profiles::{Profiles, ProfilesError, ProxyEntry};
 pub use proxy::{ProxyConfig, ProxyScheme};
 pub use repository::{ProfileRepository, RepositoryError};
+pub use rule_list::{ImportReport, ListFormat, RuleList, RuleListError};
 pub use service::{
     restore_all, DnsKind, DnsService, Kind, NetworkService, ProxyKind, ProxyService,
     RestoreAllError, ServiceError,

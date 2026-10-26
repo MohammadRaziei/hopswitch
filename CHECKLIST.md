@@ -76,6 +76,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] CLI: `proxy add-group`, `proxy use <group>`, groups in `proxy list` / `ping` / `status` (`via <group>`)
 - [x] Phase 2 spike (ADR-0011, `tools/pac-bench`): real lists measured; compact PAC = 649 KB for 127 k domains, 0 wrong answers in 174 723 hosts (V8), ~10 ms load
 - [ ] Read the `PAC benchmark` workflow result (real WinHTTP engine) and apply the decision gate in ADR-0011
+- [x] Phase 2, rule lists (pure core, independent of the PAC gate): `RuleList` imports plain and dotted lists, lower-cases, drops and counts invalid / duplicate / parent-covered entries, sorts, matches suffixes on label boundaries, and `add_suffix` replaces covered entries (one `ir` rule instead of 69 511). Real lists: 127 069 domains in 76 ms; FOD 620 lines -> 596
 - [ ] Phase 2: per-domain rules via a generated PAC served from a local HTTP endpoint; needs a first-class PAC state in `ProxyState` (the Windows adapter reports PAC as "other" today), a `Direct` profile, rule lists + importer (plain and dotted formats), updater with snapshot, `THIRD_PARTY_NOTICES`
 - [ ] Phase 3: per-app. Not decided; needs a local router (changes what the product is) or the cheap "launch a program with the proxy" alternative. Own ADR first.
 - [ ] UI: profile editor for the kinds, the group picker, the auto connect checkbox next to the selected profile
