@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-26, step 07o, 398 tests green; see the git log for HEAD)
+# HANDOFF — Hopswitch (state at 2026-10-26, step 07q, 433 tests green; see the git log for HEAD)
 
 > **Paste-in starter for the new chat** (the user writes Persian, informal; attach the project zip,
 > this file, and the CI results described in §8):
@@ -15,13 +15,13 @@
 
 * **Hopswitch** = a cross-platform desktop **client** that switches the **system proxy** and **system DNS**
   between saved profiles (tray + UI planned). It never runs or ships a proxy server.
-* **Built and tested (pure Rust, 398 tests):** domain model, services with exact snapshot/restore,
+* **Built and tested (pure Rust, 433 tests):** domain model, services with exact snapshot/restore,
   JSON persistence, Windows proxy adapter, a real connectivity prober (DNS / HTTP / SOCKS), auto connect +
   proxy groups ("fastest of ..."), and a full **CLI** (`hopswitch`). **Not built:** the Tauri shell and UI,
   Windows DNS (needs admin), macOS and Linux adapters, per-domain rules.
 * **Phase 2 is under way.** CI is green and the `PAC benchmark` passed the ADR-0011 gate on real Windows
   (details in §10). Done: `RuleList` (importer/normaliser) and `ProxyState::Pac(PacConfig)` (core, Windows
-  adapter, CLI `status`). Next: §9 step 2.2 (`Direct` + `Rules` profiles).
+  adapter, CLI `status`). Rules profiles exist in the model (step 07q). Next: §9 step 4, the PAC generator in Rust.
 * **Process is strict:** TDD (red seen before green), quality gate before every commit, conventional
   commits, zip the whole project after every step (`present_files`).
 
@@ -77,7 +77,7 @@ hopswitch/
 └── .github/workflows/    # ci.yml (lint, test x3 OS, msrv, windows-proxy-smoke), pac-bench.yml (manual)
 ```
 
-Tests live in `crates/*/tests/` (public API). The per-crate counts above were written at 354 tests; the total is now 398 (rule list +23, PAC state +21).
+Tests live in `crates/*/tests/` (public API). The per-crate counts above were written at 354 tests; the total is now 433 (rule list +23, PAC state +21, rules profiles +35).
 
 ## 4. Domain model and the invariants that matter
 
@@ -222,11 +222,14 @@ and QuickJS (0 wrong answers in 174 723 hosts). **Observed on a real Windows run
 
 1. ~~Read the CI and PAC results~~ (done: CI green).
 2. ~~Apply the ADR-0011 decision gate~~ **PASSED** (§10). Build phase 2 with TDD, in this order
-   (items 1 and 3 are DONE in step 07o, start at item 2):
+   (items 1 and 3 are DONE in step 07o, the model part of item 2 in step 07q):
    1. **DONE** `ProxyState::Pac(PacConfig)` as a first-class state (today a PAC is read as `Other`): Windows `AutoConfigURL`
       with no manual proxy; keep restore exactness (extend `tests/restore.rs`); update CLI `status`.
-   2. A built-in **`Direct`** profile and a **`Rules`** profile in `Profiles` (ordered rules + default target; targets
-      must exist; first match wins; user rules before list rules; domain-suffix matching).
+   2. **DONE (model, step 07q)** `Target` (`Direct` is a built-in target, not a saved profile), `Rule`, `RulesProfile`
+      (ordered rules + default, first match wins, domain-suffix matching, duplicate domain refused) in `Profiles`
+      (shared id namespace, targets must be saved proxies/groups, used targets cannot be removed; `profiles.json`
+      schema 3). **Still open:** list bindings (a list + target, always *after* the user's own rules; arrives with the
+      updater, step 6), `ProxyEntry`/automation support (a rules profile is deliberately not selectable yet), CLI.
    3. **DONE** **Rule lists** (`RuleList`, `ListFormat`, `ImportReport`, `add_suffix`): importer for the two formats (plain `domains.txt`, dotted `.example.com`), normalise
       (lowercase, strip dot, dedupe, drop+count invalid, drop entries covered by a parent), one `.ir` suffix rule
       instead of 69 k entries.

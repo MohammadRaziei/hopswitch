@@ -25,6 +25,12 @@ pub enum ValidationError {
     /// The PAC script address is not a usable `http`, `https` or `file` URL.
     #[error("invalid PAC script address: {0}")]
     InvalidPacUrl(String),
+    /// A routing rule's domain is not a valid domain name.
+    #[error("invalid rule domain: {0}")]
+    InvalidRuleDomain(String),
+    /// Two rules of one profile name the same domain, so the second could never match.
+    #[error("duplicate rule for domain: {0}")]
+    DuplicateRuleDomain(String),
     /// A bypass-list entry is empty.
     #[error("bypass entries must not be empty")]
     InvalidBypassEntry,

@@ -39,6 +39,11 @@
 9. **A manual disconnect wins over automation.** `hopswitch proxy off` / `off` while auto connect is on
    turns auto connect off for that kind and says so; otherwise a running `auto run` would undo the
    user's click within seconds. `auto proxy connect on` turns it back on.
+11. **Rules profiles (implemented, step 07q).** `Direct` is a built-in *target*, not a saved profile
+    (`proxy off` stays the global "no proxy"). A `RulesProfile` shares the id namespace with proxies and
+    groups, but it is not a `ProxyEntry`: it cannot be a target or a group member, and the automation
+    does not select it yet. Targets (rule targets and the default) must be saved proxies or groups; a
+    proxy or group they use cannot be removed. `profiles.json` is schema 3 (adds `rules`).
 10. **Persistence.** `profiles.json` goes to schema 2 (adds `groups`); version 1 files still load.
     An older Hopswitch refuses a version-2 file instead of silently dropping the groups on save.
     `auto.json` goes to schema 2 (`proxy` = `{ connect, selected }`); a version-1 `proxy.pool` /

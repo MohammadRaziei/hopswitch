@@ -4,7 +4,7 @@ use std::fs;
 
 use hopswitch_core::{
     DnsConfig, DnsProfile, ProfileRepository, Profiles, ProxyConfig, ProxyGroup, ProxyProfile,
-    ProxyScheme, RepositoryError,
+    ProxyScheme, RepositoryError, Rule, RulesProfile, Target,
 };
 use hopswitch_storage::JsonFileRepository;
 
@@ -71,7 +71,7 @@ fn the_file_carries_a_schema_version() {
     repo.save(&sample()).unwrap();
 
     let value: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-    assert_eq!(value["version"], 2);
+    assert_eq!(value["version"], 3);
     assert_eq!(value["proxies"][0]["id"], "p1");
 }
 
@@ -120,7 +120,7 @@ fn a_newer_schema_version_is_refused_not_treated_as_corrupt() {
         repo.load().unwrap_err(),
         RepositoryError::UnsupportedVersion {
             found: 99,
-            supported: 2
+            supported: 3
         }
     );
 }
@@ -213,6 +213,52 @@ fn a_group_pointing_at_a_missing_proxy_makes_the_file_corrupt() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("profiles.json");
     let bad = r#"{"version":2,"proxies":[],"groups":[{"id":"g","name":"g","members":["ghost"],"policy":"fastest"}]}"#;
+    fs::write(&path, bad).unwrap();
+
+    let result = JsonFileRepository::new(&path).load();
+
+    assert!(
+        matches!(result, Err(RepositoryError::Corrupt(_))),
+        "{result:?}"
+    );
+    assert_eq!(fs::read(&path).unwrap(), bad.as_bytes(), "left untouched");
+}
+
+#[test]
+fn rules_profiles_survive_a_save_and_a_load() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = JsonFileRepository::new(dir.path().join("profiles.json"));
+    let mut profiles = sample();
+    let rules = vec![
+        Rule::new("ir", Target::Direct).unwrap(),
+        Rule::new("example.com", Target::Proxy("p1".into())).unwrap(),
+    ];
+    let profile = RulesProfile::new("iran", "Iran", rules, Target::Proxy("p1".into())).unwrap();
+    profiles.add_rules(profile).unwrap();
+
+    repo.save(&profiles).unwrap();
+
+    assert_eq!(repo.load().unwrap(), profiles);
+}
+
+#[test]
+fn a_version_2_file_without_rules_still_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("profiles.json");
+    let old = r#"{"version":2,"proxies":[{"id":"p","name":"P","config":{"scheme":"socks5","host":"h.test","port":1080}}],"groups":[],"dns":[]}"#;
+    fs::write(&path, old).unwrap();
+
+    let profiles = JsonFileRepository::new(&path).load().unwrap();
+
+    assert_eq!(profiles.proxy_profiles().len(), 1);
+    assert_eq!(profiles.rules_profiles(), []);
+}
+
+#[test]
+fn a_rules_profile_pointing_at_a_missing_proxy_makes_the_file_corrupt() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("profiles.json");
+    let bad = r#"{"version":3,"proxies":[],"rules":[{"id":"r","name":"r","rules":[],"default":{"proxy":"ghost"}}]}"#;
     fs::write(&path, bad).unwrap();
 
     let result = JsonFileRepository::new(&path).load();

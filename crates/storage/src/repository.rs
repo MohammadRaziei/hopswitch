@@ -12,13 +12,13 @@ use serde_json::Value;
 use crate::write_atomic;
 
 /// Highest schema version this build reads and the one it writes.
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 
 /// Stores all profiles in a single versioned JSON file, replaced atomically on save.
 ///
-/// File shape: `{ "version": 2, "proxies": [...], "groups": [...], "dns": [...] }`.
-/// Version 1 (no `groups`) is still read; an older Hopswitch refuses version 2 rather than
-/// silently dropping the groups the next time it saves.
+/// File shape: `{ "version": 3, "proxies": [...], "groups": [...], "rules": [...], "dns": [...] }`.
+/// Versions 1 (no `groups`) and 2 (no `rules`) are still read; an older Hopswitch refuses a newer
+/// file rather than silently dropping the groups or rules the next time it saves.
 #[derive(Debug, Clone)]
 pub struct JsonFileRepository {
     path: PathBuf,

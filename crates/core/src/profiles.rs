@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{DnsProfile, ProxyGroup, ProxyProfile};
+use crate::{DnsProfile, ProxyGroup, ProxyProfile, RulesProfile, Target};
 
 /// Why a collection operation failed.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -24,12 +24,21 @@ pub enum ProfilesError {
         /// The missing member.
         member: String,
     },
-    /// The proxy cannot be removed because groups still use it.
-    #[error("`{id}` is used by group(s): {}", by.join(", "))]
+    /// A rules profile sends traffic to a target that is not a saved proxy or group (a rules
+    /// profile is not a valid target).
+    #[error("rules profile `{profile}` points at `{target}`, which is not a saved proxy or group")]
+    UnknownTarget {
+        /// The rules profile.
+        profile: String,
+        /// The missing target.
+        target: String,
+    },
+    /// The proxy or group cannot be removed because groups or rules profiles still use it.
+    #[error("`{id}` is used by: {}", by.join(", "))]
     InUse {
-        /// The proxy.
+        /// The proxy or group.
         id: String,
-        /// Ids of the groups that use it.
+        /// Ids of the groups and rules profiles that use it.
         by: Vec<String>,
     },
 }
@@ -43,14 +52,15 @@ pub enum ProxyEntry<'a> {
     Group(&'a ProxyGroup),
 }
 
-/// All saved profiles. Proxy and group ids share one namespace, DNS ids have their own;
-/// insertion order is preserved. Every group member is an existing plain proxy.
-/// Can only be built valid, including via serde.
+/// All saved profiles. Proxy, group and rules-profile ids share one namespace, DNS ids have their
+/// own; insertion order is preserved. Every group member is an existing plain proxy and every
+/// rules target is an existing proxy or group. Can only be built valid, including via serde.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "ProfilesDto")]
 pub struct Profiles {
     proxies: Vec<ProxyProfile>,
     groups: Vec<ProxyGroup>,
+    rules: Vec<RulesProfile>,
     dns: Vec<DnsProfile>,
 }
 
@@ -61,6 +71,8 @@ struct ProfilesDto {
     proxies: Vec<ProxyProfile>,
     #[serde(default)]
     groups: Vec<ProxyGroup>,
+    #[serde(default)]
+    rules: Vec<RulesProfile>,
     #[serde(default)]
     dns: Vec<DnsProfile>,
 }
@@ -73,16 +85,21 @@ impl TryFrom<ProfilesDto> for Profiles {
             dto.proxies
                 .iter()
                 .map(ProxyProfile::id)
-                .chain(dto.groups.iter().map(ProxyGroup::id)),
+                .chain(dto.groups.iter().map(ProxyGroup::id))
+                .chain(dto.rules.iter().map(RulesProfile::id)),
         )?;
         ensure_unique(dto.dns.iter().map(DnsProfile::id))?;
         let profiles = Self {
             proxies: dto.proxies,
             groups: dto.groups,
+            rules: dto.rules,
             dns: dto.dns,
         };
         for group in &profiles.groups {
             profiles.check_members(group)?;
+        }
+        for rules in &profiles.rules {
+            profiles.check_targets(rules)?;
         }
         Ok(profiles)
     }
@@ -119,6 +136,16 @@ impl Profiles {
         &self.groups
     }
 
+    /// All rules profiles, in insertion order.
+    pub fn rules_profiles(&self) -> &[RulesProfile] {
+        &self.rules
+    }
+
+    /// The rules profile with this id.
+    pub fn rules_profile(&self, id: &str) -> Option<&RulesProfile> {
+        self.rules.iter().find(|r| r.id() == id)
+    }
+
     /// The proxy group with this id.
     pub fn group(&self, id: &str) -> Option<&ProxyGroup> {
         self.groups.iter().find(|g| g.id() == id)
@@ -138,6 +165,40 @@ impl Profiles {
             .filter(|g| g.members().iter().any(|m| m == id))
             .map(ProxyGroup::id)
             .collect()
+    }
+
+    /// Whether a proxy, group or rules profile already has this id.
+    fn id_taken(&self, id: &str) -> bool {
+        self.proxy_entry(id).is_some() || self.rules_profile(id).is_some()
+    }
+
+    /// Ids of the rules profiles that send traffic to the proxy or group `id`.
+    fn rules_using(&self, id: &str) -> Vec<&str> {
+        let is_it = |target: &Target| matches!(target, Target::Proxy(t) if t == id);
+        self.rules
+            .iter()
+            .filter(|r| is_it(r.default_target()) || r.rules().iter().any(|x| is_it(x.target())))
+            .map(RulesProfile::id)
+            .collect()
+    }
+
+    fn check_targets(&self, profile: &RulesProfile) -> Result<(), ProfilesError> {
+        let targets = profile
+            .rules()
+            .iter()
+            .map(crate::Rule::target)
+            .chain(std::iter::once(profile.default_target()));
+        for target in targets {
+            if let Target::Proxy(id) = target {
+                if self.proxy_entry(id).is_none() {
+                    return Err(ProfilesError::UnknownTarget {
+                        profile: profile.id().to_owned(),
+                        target: id.clone(),
+                    });
+                }
+            }
+        }
+        Ok(())
     }
 
     fn check_members(&self, group: &ProxyGroup) -> Result<(), ProfilesError> {
@@ -162,7 +223,7 @@ impl Profiles {
 
     /// Appends a proxy profile; its id must be new.
     pub fn add_proxy(&mut self, profile: ProxyProfile) -> Result<(), ProfilesError> {
-        if self.proxy_entry(profile.id()).is_some() {
+        if self.id_taken(profile.id()) {
             return Err(ProfilesError::DuplicateId(profile.id().to_owned()));
         }
         self.proxies.push(profile);
@@ -172,7 +233,7 @@ impl Profiles {
     /// Appends a group; its id must be new (among proxies and groups) and every
     /// member must be a saved proxy.
     pub fn add_group(&mut self, group: ProxyGroup) -> Result<(), ProfilesError> {
-        if self.proxy_entry(group.id()).is_some() {
+        if self.id_taken(group.id()) {
             return Err(ProfilesError::DuplicateId(group.id().to_owned()));
         }
         self.check_members(&group)?;
@@ -192,14 +253,58 @@ impl Profiles {
         Ok(())
     }
 
-    /// Removes and returns the group with this id.
+    /// Removes and returns the group with this id. Refused while a rules profile uses it.
     pub fn remove_group(&mut self, id: &str) -> Result<ProxyGroup, ProfilesError> {
+        let by: Vec<String> = self
+            .rules_using(id)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        if !by.is_empty() {
+            return Err(ProfilesError::InUse {
+                id: id.to_owned(),
+                by,
+            });
+        }
         let index = self
             .groups
             .iter()
             .position(|g| g.id() == id)
             .ok_or_else(|| ProfilesError::NotFound(id.to_owned()))?;
         Ok(self.groups.remove(index))
+    }
+
+    /// Appends a rules profile; its id must be new (among proxies, groups and rules profiles) and
+    /// every target must be a saved proxy or group.
+    pub fn add_rules(&mut self, profile: RulesProfile) -> Result<(), ProfilesError> {
+        if self.id_taken(profile.id()) {
+            return Err(ProfilesError::DuplicateId(profile.id().to_owned()));
+        }
+        self.check_targets(&profile)?;
+        self.rules.push(profile);
+        Ok(())
+    }
+
+    /// Replaces the rules profile with the same id, keeping its position.
+    pub fn replace_rules(&mut self, profile: RulesProfile) -> Result<(), ProfilesError> {
+        let index = self
+            .rules
+            .iter()
+            .position(|r| r.id() == profile.id())
+            .ok_or_else(|| ProfilesError::NotFound(profile.id().to_owned()))?;
+        self.check_targets(&profile)?;
+        self.rules[index] = profile;
+        Ok(())
+    }
+
+    /// Removes and returns the rules profile with this id.
+    pub fn remove_rules(&mut self, id: &str) -> Result<RulesProfile, ProfilesError> {
+        let index = self
+            .rules
+            .iter()
+            .position(|r| r.id() == id)
+            .ok_or_else(|| ProfilesError::NotFound(id.to_owned()))?;
+        Ok(self.rules.remove(index))
     }
 
     /// Appends a DNS profile; its id must be new.
@@ -233,11 +338,13 @@ impl Profiles {
         Ok(())
     }
 
-    /// Removes and returns the proxy profile with this id. Refused while a group uses it.
+    /// Removes and returns the proxy profile with this id. Refused while a group or a rules
+    /// profile uses it.
     pub fn remove_proxy(&mut self, id: &str) -> Result<ProxyProfile, ProfilesError> {
         let by: Vec<String> = self
             .groups_using(id)
             .into_iter()
+            .chain(self.rules_using(id))
             .map(str::to_owned)
             .collect();
         if !by.is_empty() {

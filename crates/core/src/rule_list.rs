@@ -148,7 +148,7 @@ fn has_parent_in(name: &str, set: &HashSet<String>) -> bool {
     suffixes(name).skip(1).any(|parent| set.contains(parent))
 }
 
-fn is_same_or_under(entry: &str, parent: &str) -> bool {
+pub(crate) fn is_same_or_under(entry: &str, parent: &str) -> bool {
     entry == parent
         || entry
             .strip_suffix(parent)
@@ -156,7 +156,7 @@ fn is_same_or_under(entry: &str, parent: &str) -> bool {
 }
 
 /// Lower-cases, removes one trailing dot, and checks the name. `None` when invalid.
-fn normalise(raw: &str) -> Option<String> {
+pub(crate) fn normalise(raw: &str) -> Option<String> {
     let name = raw.to_ascii_lowercase();
     let name = name.strip_suffix('.').unwrap_or(&name);
     if name.is_empty() || name.len() > MAX_NAME_LEN {
