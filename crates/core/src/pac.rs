@@ -1,12 +1,16 @@
 //! A proxy auto-config (PAC) script address as a first-class system proxy state.
 
 use std::fmt;
+use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
 use crate::ValidationError;
 
+/// Longest address kept. A cap of our own choosing, far above any real PAC address; not a limit of
+/// any particular client.
 const MAX_URL_LEN: usize = 2048;
+/// The address schemes a PAC script can be loaded from.
 const SCHEMES: [&str; 3] = ["http://", "https://", "file://"];
 
 /// The address of a PAC script: `http`, `https` or `file`, no whitespace, at most 2048 characters.
@@ -61,6 +65,14 @@ impl PacConfig {
     #[must_use]
     pub fn url(&self) -> &str {
         &self.url
+    }
+}
+
+impl FromStr for PacConfig {
+    type Err = ValidationError;
+
+    fn from_str(url: &str) -> Result<Self, Self::Err> {
+        Self::new(url)
     }
 }
 

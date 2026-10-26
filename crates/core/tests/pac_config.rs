@@ -105,3 +105,12 @@ fn a_pac_state_is_not_equal_to_the_other_states() {
         }
     );
 }
+
+#[test]
+fn parses_from_text_like_a_proxy_address_does() {
+    let pac: PacConfig = "http://127.0.0.1:8123/p.pac".parse().unwrap();
+    assert_eq!(pac.url(), "http://127.0.0.1:8123/p.pac");
+
+    let err = "wpad".parse::<PacConfig>().unwrap_err();
+    assert_eq!(err, ValidationError::InvalidPacUrl("wpad".to_owned()));
+}

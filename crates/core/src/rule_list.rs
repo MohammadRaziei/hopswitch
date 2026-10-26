@@ -8,7 +8,9 @@ use std::collections::HashSet;
 
 use thiserror::Error;
 
+/// Longest domain name in text form (RFC 1035: 255 bytes on the wire, 253 as written).
 const MAX_NAME_LEN: usize = 253;
+/// Longest single label of a domain name (RFC 1035).
 const MAX_LABEL_LEN: usize = 63;
 
 /// How a list file writes its entries.
@@ -130,10 +132,8 @@ impl RuleList {
         let before = self.domains.len();
         self.domains.retain(|entry| !is_same_or_under(entry, &name));
         let removed = before - self.domains.len();
-        let at = self
-            .domains
-            .binary_search(&name)
-            .unwrap_or_else(|insert_at| insert_at);
+        // `retain` removed `name` itself, so this is where it keeps the list sorted.
+        let at = self.domains.partition_point(|entry| *entry < name);
         self.domains.insert(at, name);
         Ok(removed)
     }

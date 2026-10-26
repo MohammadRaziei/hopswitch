@@ -72,7 +72,7 @@ pub enum PacError {
 
 /// What a PAC script decides, already resolved to routes: the user's rules (in order), then domain
 /// lists (in order), then a default. The first layer that matches a host answers.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PacPlan {
     default: PacRoute,
     rules: Vec<(String, PacRoute)>,
