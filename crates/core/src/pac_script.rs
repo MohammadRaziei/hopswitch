@@ -130,6 +130,24 @@ impl PacPlan {
         Ok(plan)
     }
 
+    /// Whether any route is a SOCKS proxy. A browser understands `SOCKS5` in a PAC script, but
+    /// Windows' own engine (`WinHTTP`) answers "no proxy" for it (measured, ADR-0011), so an
+    /// application that asks `WinHTTP` would go direct instead of through the proxy. Callers that
+    /// apply the script to Windows should warn or refuse when this is true.
+    #[must_use]
+    pub fn uses_socks(&self) -> bool {
+        let is_socks = |route: &PacRoute| {
+            matches!(
+                route,
+                PacRoute::Proxy(config)
+                    if matches!(config.scheme(), ProxyScheme::Socks4 | ProxyScheme::Socks5)
+            )
+        };
+        is_socks(&self.default)
+            || self.rules.iter().any(|(_, route)| is_socks(route))
+            || self.lists.iter().any(|(_, route)| is_socks(route))
+    }
+
     /// The script.
     ///
     /// # Errors

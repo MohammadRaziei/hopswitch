@@ -45,6 +45,15 @@ checked by running the script in Node against `RuleList::matches` and the rule o
 asked again by the `PAC benchmark` workflow (`rust-bucket-ir`, `rust-fod`), and the same run reports how
 WinHTTP treats the `SOCKS5` keyword, which is not yet known.
 
+**Measured on Windows (run of 2026-10-26).** `rust-bucket-ir` (649 574 bytes) and `rust-fod` (9 778 bytes) both
+passed in WinHTTP: 535 hosts, 0 wrong, first lookup 40.7 ms and 27.1 ms. The keyword probe (`WinHttpGetProxyForUrl`
+with an explicit PAC address) returned: `PROXY h:p` -> named proxy `h:p`; `HTTPS h:p` -> named proxy
+`https://h:p`; **`SOCKS`, `SOCKS4` and `SOCKS5` -> no proxy at all** (access type 1, empty string). So an
+application that takes its proxy from WinHTTP goes **direct** when the script says `SOCKS5`, silently, instead of
+through the proxy. Browsers have their own PAC engines and are expected to honour `SOCKS5` (not measured here).
+`PacPlan::uses_socks()` reports it. The product decision (refuse SOCKS targets in a rules profile on Windows,
+warn and allow, or the local router of ADR-0010 item 5) is open: see HANDOFF section 10.
+
 ## Decisions
 
 1. **A `Rules` profile is an ordered list of rules plus a default target.** A rule matches a domain

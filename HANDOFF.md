@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-26, step 07r, 444 tests green; see the git log for HEAD)
+# HANDOFF — Hopswitch (state at 2026-10-26, step 07s, 446 tests green; see the git log for HEAD)
 
 > **Paste-in starter for the new chat** (the user writes Persian, informal; attach the project zip,
 > this file, and the CI results described in §8):
@@ -15,13 +15,13 @@
 
 * **Hopswitch** = a cross-platform desktop **client** that switches the **system proxy** and **system DNS**
   between saved profiles (tray + UI planned). It never runs or ships a proxy server.
-* **Built and tested (pure Rust, 444 tests):** domain model, services with exact snapshot/restore,
+* **Built and tested (pure Rust, 446 tests):** domain model, services with exact snapshot/restore,
   JSON persistence, Windows proxy adapter, a real connectivity prober (DNS / HTTP / SOCKS), auto connect +
   proxy groups ("fastest of ..."), and a full **CLI** (`hopswitch`). **Not built:** the Tauri shell and UI,
   Windows DNS (needs admin), macOS and Linux adapters, per-domain rules.
 * **Phase 2 is under way.** CI is green and the `PAC benchmark` passed the ADR-0011 gate on real Windows
   (details in §10). Done: `RuleList` (importer/normaliser) and `ProxyState::Pac(PacConfig)` (core, Windows
-  adapter, CLI `status`). Rules profiles exist in the model (07q) and the PAC generator exists (07r). Next: §9 step 5, the local PAC server.
+  adapter, CLI `status`). Rules profiles exist in the model (07q) and the PAC generator exists (07r). Next: decide the SOCKS question (§10) and then §9 step 5, the local PAC server.
 * **Process is strict:** TDD (red seen before green), quality gate before every commit, conventional
   commits, zip the whole project after every step (`present_files`).
 
@@ -77,7 +77,7 @@ hopswitch/
 └── .github/workflows/    # ci.yml (lint, test x3 OS, msrv, windows-proxy-smoke), pac-bench.yml (manual)
 ```
 
-Tests live in `crates/*/tests/` (public API). The per-crate counts above were written at 354 tests; the total is now 444 (rule list +23, PAC state +21, rules profiles +35, PAC generator +11).
+Tests live in `crates/*/tests/` (public API). The per-crate counts above were written at 354 tests; the total is now 444 (rule list +23, PAC state +21, rules profiles +35, PAC generator +13).
 
 ## 4. Domain model and the invariants that matter
 
@@ -283,12 +283,16 @@ and QuickJS (0 wrong answers in 174 723 hosts). **Observed on a real Windows run
   host names such as `constructor.com`; breaking the generator on purpose is caught (two mutations tried; the
   `hasOwnProperty` guard has no observable effect and is purely defensive). **Node is required in CI**
   (`HOPSWITCH_REQUIRE_NODE=1` in `ci.yml`); locally the Node tests skip with a message when Node is missing.
-  **Not yet verified on WinHTTP**: the script differs from the spike's (`A[]` answer table, `inList`, trailing
-  dot handling). The `PAC benchmark` workflow now builds `rust-bucket-ir` / `rust-fod` with
-  `cargo run -p hopswitch-core --example gen_pac` and requires them to pass; it also prints what WinHTTP returns
-  for `PROXY`, `HTTPS`, `SOCKS`, `SOCKS4`, `SOCKS5` (information only). **SOCKS5 inside a PAC on Windows is
-  unverified** and matters because most users run SOCKS5 proxies (v2rayN): read that table before the local PAC
-  server is wired to the Windows adapter. Known gaps by design: IPv4 literals are matched like host names (a rule
+  **Verified on real WinHTTP (2026-10-26 run):** `rust-bucket-ir` and `rust-fod` pass (0 wrong of 535; first
+  lookup 40.7 ms / 27.1 ms). The workflow builds them with `cargo run -p hopswitch-core --example gen_pac`.
+  **FINDING that needs a product decision:** the keyword probe shows WinHTTP returns *no proxy* for `SOCKS`,
+  `SOCKS4` and `SOCKS5` in a PAC (type 1, empty string), while `PROXY` and `HTTPS` work. An app that asks WinHTTP
+  for its proxy would go **direct** (a leak, silently) when a rule says `SOCKS5`. Browsers (own PAC engine) are
+  expected to honour it; not measured. Most users run SOCKS5 (v2rayN `v2rayn-socks`). `PacPlan::uses_socks()`
+  detects it. Options, with my recommendation first: (1) refuse a Rules profile on Windows whose targets include a
+  SOCKS proxy, with a message naming the alternative (the same tool's HTTP port, e.g. v2rayN 10809); (2) allow it
+  but warn and say which apps are affected; (3) the local router of ADR-0010 item 5 (changes what the product
+  is). Ask the user. Known gaps by design: IPv4 literals are matched like host names (a rule
   `0.1` would match `10.0.0.1`); a group target is resolved by the caller (`from_profile`'s resolver).
 * **Decision in step 07o:** a PAC is `ProxyState::Pac` only when no manual proxy is in use or stored; `AutoDetect`
   is never read into the state nor written (same as for manual proxies), which keeps restore exact. A PAC with

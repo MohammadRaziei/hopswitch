@@ -43,6 +43,41 @@ fn routes_become_the_answers_a_pac_engine_understands() {
     }
 }
 
+// ---------- which routes a PAC engine may not understand ----------
+
+fn http(port: u16) -> PacRoute {
+    PacRoute::Proxy(ProxyConfig::new(ProxyScheme::Http, "127.0.0.1", port).unwrap())
+}
+
+#[test]
+fn a_plan_of_direct_and_http_routes_does_not_use_socks() {
+    let plan = PacPlan::new(http(1))
+        .with_rule("a.com", PacRoute::Direct)
+        .unwrap()
+        .with_list(list("b.com\n"), http(2));
+    assert!(!plan.uses_socks());
+}
+
+#[test]
+fn a_socks_route_is_found_in_the_default_a_rule_or_a_list() {
+    let in_default = PacPlan::new(socks("127.0.0.1", 1));
+    let in_rule = PacPlan::new(PacRoute::Direct)
+        .with_rule("a.com", socks("127.0.0.1", 1))
+        .unwrap();
+    let in_list = PacPlan::new(PacRoute::Direct).with_list(list("a.com\n"), socks("127.0.0.1", 1));
+    let socks4 = PacPlan::new(PacRoute::Proxy(
+        ProxyConfig::new(ProxyScheme::Socks4, "127.0.0.1", 1).unwrap(),
+    ));
+    for (name, plan) in [
+        ("default", in_default),
+        ("rule", in_rule),
+        ("list", in_list),
+        ("socks4", socks4),
+    ] {
+        assert!(plan.uses_socks(), "{name}");
+    }
+}
+
 // ---------- structure and limits ----------
 
 #[test]
