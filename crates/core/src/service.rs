@@ -124,6 +124,15 @@ pub type ProxyService = NetworkService<ProxyKind>;
 /// Service for system DNS.
 pub type DnsService = NetworkService<DnsKind>;
 
+impl<K: Kind> std::fmt::Debug for NetworkService<K> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The system and the store are trait objects; whether something is active is what matters.
+        f.debug_struct("NetworkService")
+            .field("active", &self.session.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
 impl<K: Kind> NetworkService<K> {
     /// A service with nothing active.
     pub fn new(network: Arc<dyn SystemNetwork>, store: Arc<dyn SessionStore<K::State>>) -> Self {

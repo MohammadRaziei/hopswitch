@@ -9,6 +9,7 @@ use crate::{
 };
 
 /// One independently-faultable setting (proxy or DNS).
+#[derive(Debug)]
 struct Channel<S> {
     state: S,
     reads: usize,
@@ -49,6 +50,7 @@ impl<S: Clone> Channel<S> {
     }
 }
 
+#[derive(Debug)]
 struct Inner {
     proxy: Channel<ProxyState>,
     dns: Channel<DnsState>,
@@ -57,6 +59,7 @@ struct Inner {
 /// An in-memory [`SystemNetwork`] with failure injection and call counters.
 ///
 /// Starts with no proxy and automatic DNS.
+#[derive(Debug)]
 pub struct InMemoryNetwork {
     inner: Mutex<Inner>,
 }
@@ -155,6 +158,7 @@ impl SystemNetwork for InMemoryNetwork {
     }
 }
 
+#[derive(Debug)]
 struct StoreInner<S> {
     saved: Option<Session<S>>,
     saves: usize,
@@ -164,6 +168,7 @@ struct StoreInner<S> {
 }
 
 /// An in-memory [`SessionStore`] with failure injection and call counters.
+#[derive(Debug)]
 pub struct InMemoryStore<S> {
     inner: Mutex<StoreInner<S>>,
 }
@@ -251,7 +256,7 @@ pub struct RecordedCall {
     pub args: Vec<String>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct RunnerInner {
     responses: VecDeque<Result<CommandOutput, SystemError>>,
     calls: Vec<RecordedCall>,
@@ -261,7 +266,7 @@ struct RunnerInner {
 ///
 /// Responses are consumed in order; once they run out every command succeeds
 /// with empty output.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct FakeRunner {
     inner: Mutex<RunnerInner>,
 }

@@ -19,6 +19,8 @@ thiserror = "1"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"
+# Every public type can be printed in a log or a failed assertion; hand-write it to hide secrets.
+missing_debug_implementations = "warn"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

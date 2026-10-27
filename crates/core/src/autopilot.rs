@@ -57,25 +57,62 @@ pub enum Decision {
     Deactivate,
 }
 
+/// Which automatic behaviours are on (ADR-0009). One choice among four, so a call site reads
+/// `AutoMode::Connect`, not a pair of unlabelled booleans.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AutoMode {
+    /// Nothing happens by itself.
+    Off,
+    /// Connect when something answers, disconnect when nothing does; never switch.
+    Connect,
+    /// Keep an active connection on the fastest profile; never connect or disconnect.
+    Switch,
+    /// Connect to the fastest, fail over, disconnect if all are dead.
+    ConnectAndSwitch,
+}
+
+impl AutoMode {
+    /// Whether this mode connects and disconnects by itself.
+    #[must_use]
+    pub fn connects(self) -> bool {
+        matches!(self, Self::Connect | Self::ConnectAndSwitch)
+    }
+
+    /// Whether this mode moves an active connection to a faster profile.
+    #[must_use]
+    pub fn switches(self) -> bool {
+        matches!(self, Self::Switch | Self::ConnectAndSwitch)
+    }
+
+    /// The mode for the two stored options, which a settings file keeps as two flags.
+    pub(crate) fn from_flags(connect: bool, switch: bool) -> Self {
+        match (connect, switch) {
+            (false, false) => Self::Off,
+            (true, false) => Self::Connect,
+            (false, true) => Self::Switch,
+            (true, true) => Self::ConnectAndSwitch,
+        }
+    }
+}
+
 /// Which automatic behaviours are on, and how cautious they are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AutoSettings {
-    connect: bool,
-    switch: bool,
+    mode: AutoMode,
     failures_before_giving_up: u8,
     min_gain_ms: u32,
     min_gain_percent: u8,
 }
 
+/// Largest minimum gain (in percent) a switch may be set to require.
 const MAX_GAIN_PERCENT: u8 = 90;
 
 impl AutoSettings {
     /// Defaults: give up after 3 failures in a row; switch only for a gain of
     /// at least 50 ms *and* 20 %.
-    pub fn new(connect: bool, switch: bool) -> Self {
+    pub fn new(mode: AutoMode) -> Self {
         Self {
-            connect,
-            switch,
+            mode,
             failures_before_giving_up: 3,
             min_gain_ms: 50,
             min_gain_percent: 20,
@@ -129,17 +166,17 @@ impl Autopilot {
     /// user's own choice and is never touched.
     pub fn observe(&mut self, active: Option<&str>, probes: &[Probe]) -> Decision {
         let s = self.settings;
-        if !s.connect && !s.switch {
+        if s.mode == AutoMode::Off {
             return Decision::Keep;
         }
         let fastest = fastest_alive(probes);
 
         let Some(active) = active else {
             self.misses = 0;
-            if !s.connect {
+            if !s.mode.connects() {
                 return Decision::Keep;
             }
-            let pick = if s.switch {
+            let pick = if s.mode.switches() {
                 fastest
             } else {
                 first_alive(probes)
@@ -156,7 +193,7 @@ impl Autopilot {
                 self.misses = 0;
                 match fastest {
                     Some((best, best_ms))
-                        if s.switch
+                        if s.mode.switches()
                             && best.id != active
                             && self.clearly_faster(best_ms, latency_ms) =>
                     {
@@ -170,10 +207,10 @@ impl Autopilot {
                 if self.misses < s.failures_before_giving_up {
                     return Decision::Keep;
                 }
-                if let (true, Some((best, _))) = (s.switch, fastest) {
+                if let (true, Some((best, _))) = (s.mode.switches(), fastest) {
                     self.misses = 0;
                     Decision::Activate(best.id.clone())
-                } else if s.connect {
+                } else if s.mode.connects() {
                     self.misses = 0;
                     Decision::Deactivate
                 } else {

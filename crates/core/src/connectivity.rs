@@ -6,10 +6,15 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+/// Shortest probe timeout accepted, in milliseconds.
 const MIN_TIMEOUT_MS: u32 = 500;
+/// Longest probe timeout accepted, in milliseconds.
 const MAX_TIMEOUT_MS: u32 = 10_000;
+/// Shortest time between two probe rounds accepted, in seconds.
 const MIN_INTERVAL_SECS: u32 = 5;
+/// Longest time between two probe rounds accepted, in seconds.
 const MAX_INTERVAL_SECS: u32 = 3600;
+/// Longest domain name in text form (RFC 1035).
 const MAX_DOMAIN_CHARS: usize = 253;
 
 /// Why connectivity or auto-switch settings were rejected.

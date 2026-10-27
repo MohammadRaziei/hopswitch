@@ -14,7 +14,9 @@
 
 use thiserror::Error;
 
+/// Start of the line that opens the block Hopswitch manages in a file.
 const BEGIN_PREFIX: &str = "# >>> hopswitch begin";
+/// Start of the line that closes the managed block.
 const END_PREFIX: &str = "# <<< hopswitch end";
 
 /// First line of the block Hopswitch writes.

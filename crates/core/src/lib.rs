@@ -29,7 +29,7 @@ mod session;
 
 pub use auto_config::{AutoConfig, AutoConfigError, AutoConfigStore, AutoKind, ProxyAuto};
 pub use auto_runner::{AutoRunner, KindReport, TickReport};
-pub use autopilot::{fastest_alive, AutoSettings, Autopilot, Decision, Health, Probe};
+pub use autopilot::{fastest_alive, AutoMode, AutoSettings, Autopilot, Decision, Health, Probe};
 pub use connectivity::{ConnectivitySettings, SettingsError};
 pub use dns::{DnsConfig, MAX_DNS_SERVERS};
 pub use error::ValidationError;

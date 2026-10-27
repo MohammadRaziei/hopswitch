@@ -4,6 +4,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::autopilot::AutoMode;
 use crate::{AutoSettings, ConnectivitySettings};
 
 /// Auto connect for the proxy: a plain flag, and the profile to connect to
@@ -47,7 +48,7 @@ impl AutoKind {
 
     /// The decision-engine settings for this kind.
     pub fn settings(&self) -> AutoSettings {
-        AutoSettings::new(self.connect, self.switch)
+        AutoSettings::new(AutoMode::from_flags(self.connect, self.switch))
     }
 
     /// Adds `id` to the end of the pool; false if it was already there.

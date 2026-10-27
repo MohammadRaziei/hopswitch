@@ -11,6 +11,7 @@
 use hopswitch_core::{PacConfig, ProxyConfig, ProxyScheme, ProxyState, SystemError};
 use serde::{Deserialize, Serialize};
 
+/// The registry key that holds the user's proxy settings.
 const KEY: &str = r"HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings";
 
 /// The five registry values we care about; `None` = the value does not exist.

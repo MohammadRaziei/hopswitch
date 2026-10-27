@@ -10,7 +10,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::ValidationError;
 
+/// Longest host name in text form (RFC 1035).
 const MAX_HOSTNAME_LEN: usize = 253;
+/// Longest single label of a host name (RFC 1035).
 const MAX_LABEL_LEN: usize = 63;
 
 /// Wire protocol of the upstream proxy.

@@ -7,8 +7,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::net::{protocol_error, Deadline};
 
+/// Size of a DNS message header in bytes (RFC 1035).
 const HEADER_LEN: usize = 12;
+/// Longest single label of a domain name (RFC 1035).
 const MAX_LABEL: usize = 63;
+/// Longest domain name in text form (RFC 1035).
 const MAX_NAME: usize = 253;
 
 /// Builds a standard recursive `A` query for `domain` (a trailing dot is allowed).

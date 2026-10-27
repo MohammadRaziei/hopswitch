@@ -52,7 +52,15 @@ with an explicit PAC address) returned: `PROXY h:p` -> named proxy `h:p`; `HTTPS
 application that takes its proxy from WinHTTP goes **direct** when the script says `SOCKS5`, silently, instead of
 through the proxy. Browsers have their own PAC engines and are expected to honour `SOCKS5` (not measured here).
 `PacPlan::uses_socks()` reports it. The product decision (refuse SOCKS targets in a rules profile on Windows,
-warn and allow, or the local router of ADR-0010 item 5) is open: see HANDOFF section 10.
+warn and allow, or the local router of ADR-0010 item 5) was decided on 2026-10-26: **fail closed.**
+A rules profile that needs a SOCKS proxy is refused when it is applied on Windows, with a message that names the
+reason and the alternative (the same tool's HTTP port). The reason is the failure mode: a script that cannot
+guarantee the proxy is used must not run, because the silent outcome is traffic that goes direct, and for a tool
+whose job is to route around blocking that is the worst result (a leak the user never sees). A warning does not
+fix that, because nobody reads it when things appear to work. The check is `PacPlan::uses_socks()`, enforced in the
+code that builds the plan for the Windows adapter (so it lives with its caller and its tests, not as a dead
+function). Revisit if the local router (ADR-0010 item 5) is built, or if a measurement shows an engine that honours
+SOCKS in a PAC; browsers are expected to but this was not measured, so even they are not exempted for now.
 
 ## Decisions
 

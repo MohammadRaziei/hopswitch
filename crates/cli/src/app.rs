@@ -63,6 +63,14 @@ pub struct Context {
     pub prober: Arc<dyn Prober>,
 }
 
+impl std::fmt::Debug for Context {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Context")
+            .field("dir", &self.dir)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Runs one command line and prints the result to `out`.
 pub fn run(args: &[String], ctx: &Context, out: &mut dyn Write) -> Result<(), CliError> {
     match parse(args)? {

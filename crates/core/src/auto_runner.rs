@@ -9,8 +9,8 @@
 //! hysteresis and failover as before. DNS follows its own options and pool.
 
 use crate::{
-    probe_dns_profiles, probe_proxies, AutoConfig, AutoSettings, Autopilot, Decision, DnsService,
-    Probe, Prober, Profiles, ProxyAuto, ProxyEntry, ProxyProfile, ProxyService,
+    probe_dns_profiles, probe_proxies, AutoConfig, AutoMode, AutoSettings, Autopilot, Decision,
+    DnsService, Probe, Prober, Profiles, ProxyAuto, ProxyEntry, ProxyProfile, ProxyService,
 };
 
 /// What happened for one kind during a round.
@@ -60,7 +60,7 @@ impl Default for AutoRunner {
 impl AutoRunner {
     /// A runner that gives up on a profile only after several failures in a row.
     pub fn new() -> Self {
-        let settings = AutoSettings::new(false, false);
+        let settings = AutoSettings::new(AutoMode::Off);
         Self {
             proxy: Autopilot::new(settings),
             dns: Autopilot::new(settings),
@@ -171,7 +171,9 @@ fn proxy_plan(profiles: &Profiles, auto: &ProxyAuto) -> Option<(Vec<ProxyProfile
     }
     match profiles.proxy_entry(auto.selected.as_deref()?)? {
         // One proxy: connect while it answers, give up after repeated failures.
-        ProxyEntry::Proxy(proxy) => Some((vec![proxy.clone()], AutoSettings::new(true, false))),
+        ProxyEntry::Proxy(proxy) => {
+            Some((vec![proxy.clone()], AutoSettings::new(AutoMode::Connect)))
+        }
         // A group: the fastest live member, with switching and failover.
         ProxyEntry::Group(group) => {
             let members = group
@@ -179,7 +181,7 @@ fn proxy_plan(profiles: &Profiles, auto: &ProxyAuto) -> Option<(Vec<ProxyProfile
                 .iter()
                 .filter_map(|id| profiles.proxy(id).cloned())
                 .collect();
-            Some((members, AutoSettings::new(true, true)))
+            Some((members, AutoSettings::new(AutoMode::ConnectAndSwitch)))
         }
     }
 }

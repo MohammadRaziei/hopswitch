@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-26, step 07u, 447 tests green; see the git log for HEAD)
+# HANDOFF — Hopswitch (state at 2026-10-26, step 07v, 448 tests green; see the git log for HEAD)
 
 > **Paste-in starter for the new chat** (the user writes Persian, informal; attach the project zip,
 > this file; **do not ask him to paste CI results, read them yourself, see §8**):
@@ -15,7 +15,7 @@
 
 * **Hopswitch** = a cross-platform desktop **client** that switches the **system proxy** and **system DNS**
   between saved profiles (tray + UI planned). It never runs or ships a proxy server.
-* **Built and tested (pure Rust, 447 tests):** domain model, services with exact snapshot/restore,
+* **Built and tested (pure Rust, 448 tests):** domain model, services with exact snapshot/restore,
   JSON persistence, Windows proxy adapter, a real connectivity prober (DNS / HTTP / SOCKS), auto connect +
   proxy groups ("fastest of ..."), and a full **CLI** (`hopswitch`). **Not built:** the Tauri shell and UI,
   Windows DNS (needs admin), macOS and Linux adapters, per-domain rules.
@@ -311,20 +311,21 @@ override it) or a bug in these two scripts.
   `SOCKS4` and `SOCKS5` in a PAC (type 1, empty string), while `PROXY` and `HTTPS` work. An app that asks WinHTTP
   for its proxy would go **direct** (a leak, silently) when a rule says `SOCKS5`. Browsers (own PAC engine) are
   expected to honour it; not measured. Most users run SOCKS5 (v2rayN `v2rayn-socks`). `PacPlan::uses_socks()`
-  detects it. Options, with my recommendation first: (1) refuse a Rules profile on Windows whose targets include a
-  SOCKS proxy, with a message naming the alternative (the same tool's HTTP port, e.g. v2rayN 10809); (2) allow it
-  but warn and say which apps are affected; (3) the local router of ADR-0010 item 5 (changes what the product
-  is). Ask the user. Known gaps by design: IPv4 literals are matched like host names (a rule
+  detects it. **DECIDED (2026-10-26, user: "take the principled way"): fail closed.** Refuse to apply a Rules
+  profile on Windows whose targets include a SOCKS proxy, with a message that names the reason and the alternative
+  (the same tool's HTTP port, e.g. v2rayN 10809); no warn-and-allow. Reasons in ADR-0011. Implement the check in the
+  code that builds the plan for the Windows adapter (step 5/6), with its tests. Known gaps by design: IPv4 literals are matched like host names (a rule
   `0.1` would match `10.0.0.1`); a group target is resolved by the caller (`from_profile`'s resolver).
 * **Code review against the BeautifulRust skill (step 07u).** `morganlinton/BeautifulRust` (`skills/rust-best-practices`,
   MIT) was read in full except its `references/`. New code of this session was fixed where it fell short (`FromStr` for
   `PacConfig`, documented limits, a simpler insertion in `add_suffix`, `PartialEq` on `PacPlan`). **Older code, not
-  changed, decide with the user:** (1) `AutoSettings::new(connect: bool, switch: bool)` is a public two-`bool`
-  constructor (the skill wants an enum or two constructors; ~12 call sites); (2) six public types have no `Debug`:
-  `cli::Context`, `WindowsNetwork`, `InMemoryNetwork`, `InMemoryStore`, `FakeRunner`, `NetworkService` (enabling the
-  `missing_debug_implementations` lint in `[workspace.lints.rust]` would list them); (3) public enums are not
-  `#[non_exhaustive]` (fine while only this workspace matches on them; revisit before publishing the crates);
-  (4) a few consts have no doc comment (`connectivity.rs`, `managed_block.rs`, `presets.rs`, `autopilot.rs`).
+  changed in 07u, **done in 07v** (the user said to take the principled way): (1) `AutoSettings::new` took two
+  `bool`s; it now takes `AutoMode::{Off, Connect, Switch, ConnectAndSwitch}` (all four combinations have a meaning, per
+  the module docs; the config file still stores two flags, converted by the crate-private `AutoMode::from_flags`);
+  (2) the six public types without `Debug` now have it (derived, or hand-written where a field is a trait object), and
+  `missing_debug_implementations = "warn"` is on in `[workspace.lints.rust]` so clippy `-D warnings` keeps it that
+  way; (4) the undocumented consts got doc comments. **Still open:** (3) public enums are not `#[non_exhaustive]`
+  (fine while only this workspace matches on them; revisit before publishing the crates).
   Found clean: no `unwrap()` outside tests, no `get_` getters, no `&String`/`&Vec` parameters, no glob imports,
   no `deny(warnings)`, `unsafe` is forbidden.
 * **Decision in step 07o:** a PAC is `ProxyState::Pac` only when no manual proxy is in use or stored; `AutoDetect`

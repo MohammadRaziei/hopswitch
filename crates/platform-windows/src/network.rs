@@ -8,6 +8,7 @@ use hopswitch_core::{CommandRunner, DnsState, ProxyState, SystemError, SystemNet
 use crate::registry::{self, RegistryValues};
 use crate::ProcessRunner;
 
+/// The program that reads and writes the registry and refreshes `WinINet`.
 const POWERSHELL: &str = "powershell";
 
 const DNS_UNSUPPORTED: &str = "changing DNS on Windows needs administrator rights and \
@@ -19,6 +20,12 @@ const DNS_UNSUPPORTED: &str = "changing DNS on Windows needs administrator right
 /// elevated helper provides.
 pub struct WindowsNetwork {
     runner: Arc<dyn CommandRunner>,
+}
+
+impl std::fmt::Debug for WindowsNetwork {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WindowsNetwork").finish_non_exhaustive()
+    }
 }
 
 impl WindowsNetwork {
