@@ -1,9 +1,9 @@
 # CI report
 
-- commit: `32ee927ee077b30acc7defad02d9a6b0ee3bcb2d` on `master` - chore: Improve Rust code quality and add FromStr impl for PacConfig
-- event: push, run: https://github.com/MohammadRaziei/hopswitch/actions/runs/40400356334
+- commit: `e7ff0ccce8d2781fbac288d24de71e5022cbae75` on `master` - add hopswitch-pacserver crate and update Phase 2 checklist with local PAC server progress
+- event: push, run: https://github.com/MohammadRaziei/hopswitch/actions/runs/40655962822
 - result: **all green** (1 of 1 jobs ok)
-- written: 2026-10-26 20:59:40 UTC
+- written: 2026-10-28 08:21:48 UTC
 
 | job | result |
 | --- | --- |
@@ -17,12 +17,12 @@
 | --- | ---: | ---: | ---: | ---: | --- |
 | object-full | 2,276,542 |  |  |  | FAILED: Exception calling "Resolve" with "3" argument(s): "Unknown error (0x2f87)" 12167 |
 | object-ir | 1,074,053 |  |  |  | FAILED: Exception calling "Resolve" with "3" argument(s): "Unknown error (0x2f87)" 12167 |
-| bucket-ir | 649,466 | 440.8 | 251.7 | 0 | ok |
-| fod | 10,728 | 22.4 | 241.7 | 0 | ok |
-| rust-bucket-ir | 649,574 | 45.1 | 297.4 | 0 | ok |
-| rust-fod | 9,778 | 23 | 252.3 | 0 | ok |
+| bucket-ir | 649,466 | 750.4 | 160.7 | 0 | ok |
+| fod | 10,728 | 18.3 | 142.2 | 0 | ok |
+| rust-bucket-ir | 649,574 | 63.8 | 201.1 | 0 | ok |
+| rust-fod | 9,778 | 18.3 | 138.3 | 0 | ok |
 
-### What WinHTTP returns for each PAC keyword
+### What WinHTTP returns for each PAC keyword, and for a dead PAC address
 
 | keyword in the script | WinHTTP returned |
 | --- | --- |
@@ -31,3 +31,4 @@
 | SOCKS 127.0.0.1:9 | type=1 proxy= |
 | SOCKS4 127.0.0.1:9 | type=1 proxy= |
 | SOCKS5 127.0.0.1:9 | type=1 proxy= |
+| a PAC address nothing listens on | FAILED: Exception calling "ResolveRaw" with "3" argument(s): "Unknown error (0x2f87)" |
