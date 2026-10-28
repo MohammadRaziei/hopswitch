@@ -5,13 +5,15 @@ mod app;
 mod command;
 mod dirs;
 mod error;
+mod launch;
 mod unsupported;
 
-pub use app::{run, Context};
+pub use app::{run, usage, Context};
 pub use command::{
     parse, AutoCommand, AutoOption, Command, DnsAutoCommand, DnsCommand, PingOptions, PingScope,
     ProxyCommand,
 };
 pub use dirs::{default_dir, Platform};
 pub use error::CliError;
+pub use launch::{decide_launch, no_gui_hint, Launch, NoGuiReason};
 pub use unsupported::UnsupportedNetwork;

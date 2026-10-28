@@ -348,6 +348,7 @@ mod prober_fake {
     pub struct FakeProber {
         proxies: HashMap<String, Health>,
         dns: HashMap<IpAddr, Health>,
+        local_ports: HashMap<u16, Health>,
         calls: Mutex<Vec<String>>,
     }
 
@@ -375,7 +376,15 @@ mod prober_fake {
             self
         }
 
-        /// Every probe made so far, as text (`proxy <url> <target> <ms>ms`, `dns <ip> <domain> <ms>ms`).
+        /// Scripts the answer for loopback `port` (a local server such as the PAC server).
+        #[must_use]
+        pub fn with_local_port(mut self, port: u16, health: Health) -> Self {
+            self.local_ports.insert(port, health);
+            self
+        }
+
+        /// Every probe made so far, as text (`proxy <url> <target> <ms>ms`, `dns <ip> <domain> <ms>ms`,
+        /// `local 127.0.0.1:<port> <ms>ms`).
         pub fn calls(&self) -> Vec<String> {
             self.calls
                 .lock()
@@ -402,6 +411,11 @@ mod prober_fake {
         fn probe_dns(&self, server: IpAddr, domain: &str, timeout: Duration) -> Health {
             self.record(format!("dns {server} {domain} {}ms", timeout.as_millis()));
             self.dns.get(&server).copied().unwrap_or(Health::Dead)
+        }
+
+        fn probe_local_port(&self, port: u16, timeout: Duration) -> Health {
+            self.record(format!("local 127.0.0.1:{port} {}ms", timeout.as_millis()));
+            self.local_ports.get(&port).copied().unwrap_or(Health::Dead)
         }
     }
 }

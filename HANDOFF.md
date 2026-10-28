@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-26, step 07x, 477 tests green; see the git log for HEAD)
+# HANDOFF — Hopswitch (state at 2026-10-26, step 07z, 504 tests green; see the git log for HEAD)
 
 > **Paste-in starter for the new chat** (the user writes Persian, informal; attach the project zip,
 > this file; **do not ask him to paste CI results, read them yourself, see §8**):
@@ -15,7 +15,7 @@
 
 * **Hopswitch** = a cross-platform desktop **client** that switches the **system proxy** and **system DNS**
   between saved profiles (tray + UI planned). It never runs or ships a proxy server.
-* **Built and tested (pure Rust, 477 tests):** domain model, services with exact snapshot/restore,
+* **Built and tested (pure Rust, 504 tests):** domain model, services with exact snapshot/restore,
   JSON persistence, Windows proxy adapter, a real connectivity prober (DNS / HTTP / SOCKS), auto connect +
   proxy groups ("fastest of ..."), and a full **CLI** (`hopswitch`). **Not built:** the Tauri shell and UI,
   Windows DNS (needs admin), macOS and Linux adapters, per-domain rules.
@@ -277,10 +277,18 @@ override it) or a bug in these two scripts.
       dead. I first wrote "every web request fails"; that was a guess and is probably wrong for browsers, which
       are generally reported to fall back to *direct* when a PAC cannot be loaded (a silent leak, not an outage);
       neither is verified. The `PAC benchmark` now prints what WinHTTP returns for a dead PAC address (row "a PAC
-      address nothing listens on"): read it before choosing. **Still to build:** on start of any command, detect
-      `ProxyState::Pac(p)` with `p.hopswitch_port()` set and nothing listening there (a TCP connect through the
-      `probe` crate), and say so in `status` / restore the saved original; there is no watchdog while Hopswitch
-      is not running, so until the user starts it again the dead address stays.
+      address nothing listens on"): **measured 2026-10-28 on real WinHTTP: it returns error 0x2f87
+      (ERROR_WINHTTP_BAD_AUTO_PROXY_SCRIPT), not "no proxy"**; what each application then does (go direct, or fail)
+      is still unmeasured, so messages must not claim either. **Detection DONE (07y):** `Prober::probe_local_port`
+      (a third method; `NetProber` does a TCP connect to 127.0.0.1:port, `FakeProber::with_local_port`),
+      `stale_hopswitch_pac(state, prober, timeout)` in core (only Hopswitch's own exact address is judged, nothing is
+      probed for anything else); CLI `status` says "nothing is listening; run `hopswitch off`" (also while a session
+      is active, which is what a crash leaves) and "served by Hopswitch" when it is alive; `off` / `proxy off` with a
+      saved original restore it as before, and with **no** saved original switch a dead own address off (the one
+      always-safe state) instead of saying "nothing to restore"; an alive own address or a foreign PAC is left alone.
+      **Still open:** no watchdog exists while Hopswitch is not running, so until the user runs any Hopswitch
+      command the dead address stays (a login-time task or helper is a later decision); the dead address is only
+      detected by commands, not on a timer.
    6. **Updater** (opt-in, release asset URL, check `.sha256` when published, cache, keep the old list on failure,
       download through the selected proxy, manual import) + bundled snapshot + `THIRD_PARTY_NOTICES`.
    7. CLI: `rules ...` commands; presets "Iran: local sites direct" and "Developer services" (both off by default).
@@ -346,6 +354,21 @@ override it) or a bug in these two scripts.
   (fine while only this workspace matches on them; revisit before publishing the crates).
   Found clean: no `unwrap()` outside tests, no `get_` getters, no `&String`/`&Vec` parameters, no glob imports,
   no `deny(warnings)`, `unsafe` is forbidden.
+* **Headless mode, web interface, bare command, MCP (ADR-0012, step 07z).** The user asked for: `--ip`/`--port`
+  on a web interface served by the CLI; easy automatic install on machines without graphics; bare `hopswitch` opens
+  the GUI (as admin if needed), any argument is the CLI (like MATLAB); an MCP server if useful. ADR-0012 records the
+  decisions (one command two shapes; GUI = separate `hopswitch-gui` next to `hopswitch`; elevation per action, not
+  for the whole GUI; `serve` default `127.0.0.1:47831` with bearer token, `Host`/`Origin` checks, non-loopback only
+  with `--allow-remote`; static musl binaries + `service install`; `hopswitch mcp` over stdio, read-only unless
+  `--allow-write`). **Done in 07z:** `hopswitch --version` / `-V`; `decide_launch` + `no_gui_hint` (pure, 10 tests) and
+  `main.rs` wiring, checked on the real Linux binary (no display, display without GUI, display with a stand-in GUI
+  script, and that any argument never starts the GUI). **Untested, by necessity:** starting a real GUI on
+  Windows/macOS, `SSH_CONNECTION` handling on those two. The hint text must not mention `hopswitch serve` until
+  it exists (it is mentioned in the doc comment of `no_gui_hint` as the place to add it). **Not done:** `serve`,
+  MCP, Linux adapter, `service install`, release builds. **OPEN QUESTION to the user (asked twice):** what must the
+  Linux adapter change on a server (shell proxy variables, `apt`, `docker`, DNS)? Do not build it on a guess.
+  Order of work is in ADR-0012: (b) `serve`, (c) MCP read-only, (d) Linux adapter, (e) `service install`, (f) UI pages,
+  (g) releases.
 * **Decision in step 07o:** a PAC is `ProxyState::Pac` only when no manual proxy is in use or stored; `AutoDetect`
   is never read into the state nor written (same as for manual proxies), which keeps restore exact. A PAC with
   a stored server, proxy switched on, or an address Hopswitch cannot model stays `Other`.

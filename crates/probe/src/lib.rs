@@ -12,7 +12,7 @@ mod net;
 mod proxy;
 mod target;
 
-use std::net::IpAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 use std::time::{Duration, Instant};
 
 use hopswitch_core::{Health, Prober, ProxyConfig};
@@ -56,6 +56,15 @@ impl Prober for NetProber {
         let started = Instant::now();
         let result = dns::probe(server, self.dns_port, domain, net::Deadline::after(timeout));
         health_of(result.is_ok(), started)
+    }
+
+    fn probe_local_port(&self, port: u16, timeout: Duration) -> Health {
+        let started = Instant::now();
+        let address = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+        health_of(
+            TcpStream::connect_timeout(&address, timeout).is_ok(),
+            started,
+        )
     }
 }
 

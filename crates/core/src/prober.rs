@@ -8,7 +8,8 @@ use std::thread;
 use std::time::Duration;
 
 use crate::{
-    ConnectivitySettings, DnsConfig, DnsProfile, Health, Probe, ProxyConfig, ProxyProfile,
+    ConnectivitySettings, DnsConfig, DnsProfile, Health, PacConfig, Probe, ProxyConfig,
+    ProxyProfile, ProxyState,
 };
 
 /// Tests one proxy or one DNS server and reports how it went.
@@ -17,6 +18,27 @@ pub trait Prober: Send + Sync {
     fn probe_proxy(&self, config: &ProxyConfig, target: &str, timeout: Duration) -> Health;
     /// Asks the DNS `server` directly for `domain`.
     fn probe_dns(&self, server: IpAddr, domain: &str, timeout: Duration) -> Health;
+    /// Whether something accepts connections on `port` of the loopback interface (127.0.0.1).
+    fn probe_local_port(&self, port: u16, timeout: Duration) -> Health;
+}
+
+/// The PAC address in `state` when it is Hopswitch's own (`http://127.0.0.1:<port>/hopswitch.pac`)
+/// but nothing is listening there any more: the process that served it is gone, so the system
+/// points at a dead address. A PAC script someone else set, or any other state, is never judged
+/// and nothing is probed for it.
+pub fn stale_hopswitch_pac(
+    state: &ProxyState,
+    prober: &dyn Prober,
+    timeout: Duration,
+) -> Option<PacConfig> {
+    let ProxyState::Pac(pac) = state else {
+        return None;
+    };
+    let port = pac.hopswitch_port()?;
+    match prober.probe_local_port(port, timeout) {
+        Health::Alive { .. } => None,
+        Health::Dead => Some(pac.clone()),
+    }
 }
 
 fn timeout_of(settings: &ConnectivitySettings) -> Duration {

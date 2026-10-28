@@ -102,6 +102,10 @@ impl Prober for Slow {
     fn probe_dns(&self, _: IpAddr, _: &str, _: Duration) -> Health {
         Health::Dead
     }
+
+    fn probe_local_port(&self, _: u16, _: Duration) -> Health {
+        Health::Dead
+    }
 }
 
 #[test]

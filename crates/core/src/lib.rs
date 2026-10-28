@@ -40,7 +40,7 @@ pub use pac_script::{PacError, PacPlan, PacRoute, PAC_MAX_BYTES, PAC_TARGET_BYTE
 pub use presets::{
     dns_preset, dns_presets, proxy_preset, proxy_presets, DnsPreset, DnsPresetGroup, ProxyPreset,
 };
-pub use prober::{probe_dns_profiles, probe_proxies, Prober};
+pub use prober::{probe_dns_profiles, probe_proxies, stale_hopswitch_pac, Prober};
 pub use profile::{DnsProfile, ProxyProfile, MAX_NAME_CHARS};
 pub use profiles::{Profiles, ProfilesError, ProxyEntry};
 pub use proxy::{ProxyConfig, ProxyScheme};

@@ -12,10 +12,10 @@ use std::time::Duration;
 
 use hopswitch_core::{
     dns_preset, dns_presets, fastest_alive, probe_dns_profiles, probe_proxies, proxy_preset,
-    proxy_presets, restore_all, AutoConfig, AutoConfigStore, AutoRunner, ConnectivitySettings,
-    Decision, DnsConfig, DnsProfile, DnsService, DnsState, Health, Kind, KindReport,
-    NetworkService, Probe, Prober, ProfileRepository, Profiles, ProxyConfig, ProxyGroup,
-    ProxyProfile, ProxyService, ProxyState, SessionStore, SystemNetwork, TickReport,
+    proxy_presets, restore_all, stale_hopswitch_pac, AutoConfig, AutoConfigStore, AutoRunner,
+    ConnectivitySettings, Decision, DnsConfig, DnsProfile, DnsService, DnsState, Health, Kind,
+    KindReport, NetworkService, Probe, Prober, ProfileRepository, Profiles, ProxyConfig,
+    ProxyGroup, ProxyProfile, ProxyService, ProxyState, SessionStore, SystemNetwork, TickReport,
 };
 use hopswitch_storage::{JsonFileAutoStore, JsonFileRepository, JsonFileSessionStore};
 
@@ -51,7 +51,10 @@ usage:
   hopswitch auto set [--url U] [--domain D] [--timeout MS] [--interval SECS]
   hopswitch auto run [--once]               apply the auto settings (Ctrl-C to stop)
   hopswitch off                             restore both proxy and DNS
-  hopswitch help                            show this text";
+  hopswitch help                            show this text
+  hopswitch --version                       show the version
+
+Run `hopswitch` with no arguments to open the app when this machine has a screen.";
 
 /// Everything the CLI needs from the outside world.
 pub struct Context {
@@ -75,10 +78,15 @@ impl std::fmt::Debug for Context {
 pub fn run(args: &[String], ctx: &Context, out: &mut dyn Write) -> Result<(), CliError> {
     match parse(args)? {
         Command::Help => say(out, USAGE),
+        Command::Version => say(out, version_line()),
         Command::Auto(AutoCommand::Run { once }) => auto_run(ctx, once, out),
         command => App::open(ctx)?.execute(command, out),
     }
 }
+
+/// How long to wait when checking whether Hopswitch's own PAC server is still there. A refused
+/// loopback connection answers at once on most systems; Windows may retry for about a second.
+const STALE_CHECK_TIMEOUT: Duration = Duration::from_millis(1500);
 
 struct App {
     network: Arc<dyn SystemNetwork>,
@@ -181,6 +189,7 @@ impl App {
     fn execute(&mut self, command: Command, out: &mut dyn Write) -> Result<(), CliError> {
         match command {
             Command::Help => say(out, USAGE),
+            Command::Version => say(out, version_line()),
             Command::Status => self.status(out),
             Command::Presets => self.presets(out),
             Command::Off => self.off(out),
@@ -306,6 +315,9 @@ impl App {
 
     fn proxy_off(&mut self, out: &mut dyn Write) -> Result<(), CliError> {
         if self.proxy.active_id().is_none() {
+            if self.clear_stale_pac(out)? {
+                return Ok(());
+            }
             return say(out, "No proxy is active; nothing to restore.");
         }
         self.proxy.deactivate().map_err(CliError::failure)?;
@@ -499,7 +511,11 @@ impl App {
             self.proxy.active_id().is_some(),
             self.dns.active_id().is_some(),
         );
+        let cleared = !proxy_was && self.clear_stale_pac(out)?;
         if !proxy_was && !dns_was {
+            if cleared {
+                return Ok(());
+            }
             return say(out, "Nothing to restore: neither proxy nor DNS is active.");
         }
         restore_all(&mut self.proxy, &mut self.dns).map_err(CliError::failure)?;
@@ -510,12 +526,43 @@ impl App {
         Ok(())
     }
 
+    /// Hopswitch's own PAC address in the system settings with nothing listening behind it.
+    fn stale_own_pac(&self) -> Option<hopswitch_core::PacConfig> {
+        let state = self.network.read_proxy().ok()?;
+        stale_hopswitch_pac(&state, &*self.prober, STALE_CHECK_TIMEOUT)
+    }
+
+    /// Without a saved original there is nothing to restore, but a dead PAC address of ours must
+    /// not stay: it is switched off (the one state that is always safe to name). Returns whether
+    /// it did anything. A PAC address that is being served, or one somebody else set, is left alone.
+    fn clear_stale_pac(&self, out: &mut dyn Write) -> Result<bool, CliError> {
+        let Some(pac) = self.stale_own_pac() else {
+            return Ok(false);
+        };
+        self.network
+            .write_proxy(&ProxyState::Disabled)
+            .map_err(CliError::failure)?;
+        say(
+            out,
+            format!(
+                "Removed Hopswitch's PAC address {pac}: nothing is listening there and no saved original was found, so the proxy is now off."
+            ),
+        )?;
+        Ok(true)
+    }
+
     fn status(&self, out: &mut dyn Write) -> Result<(), CliError> {
         // A damaged profile file must not break `status`; the id is shown instead.
         let profiles = self.profiles().unwrap_or_default();
 
         let selected = self.selected_proxy();
+        let stale = self.stale_own_pac();
         let proxy = match self.proxy.active_id() {
+            _ if stale.is_some() => {
+                // Checked first: a crash leaves a session behind *and* a dead address.
+                let pac = stale.map(|p| p.to_string()).unwrap_or_default();
+                format!("PAC {pac} (Hopswitch's own address, but nothing is listening; run `hopswitch off`)")
+            }
             Some(id) => {
                 let via = selected
                     .as_deref()
@@ -530,6 +577,9 @@ impl App {
             None => match self.network.read_proxy() {
                 Ok(ProxyState::Disabled) => "off".to_owned(),
                 Ok(ProxyState::Manual(config)) => format!("{config} (not set by Hopswitch)"),
+                Ok(ProxyState::Pac(pac)) if pac.hopswitch_port().is_some() => {
+                    format!("PAC {pac} (served by Hopswitch)")
+                }
                 Ok(ProxyState::Pac(pac)) => format!("PAC {pac} (not set by Hopswitch)"),
                 Ok(ProxyState::Other { enabled: false, .. }) => {
                     "off (stored proxy settings are kept)".to_owned()
@@ -844,6 +894,17 @@ where
         service.resume(session);
     }
     Ok(service)
+}
+
+/// The help text, as printed by `hopswitch help`.
+#[must_use]
+pub fn usage() -> &'static str {
+    USAGE
+}
+
+/// `hopswitch <version>`, as printed by `--version`.
+fn version_line() -> String {
+    format!("hopswitch {}", env!("CARGO_PKG_VERSION"))
 }
 
 fn say(out: &mut dyn Write, text: impl Display) -> Result<(), CliError> {

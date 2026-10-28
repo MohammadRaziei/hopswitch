@@ -1156,3 +1156,131 @@ fn status_says_custom_for_a_foreign_setup_that_is_in_use() {
 
     assert!(line_with(&out, "proxy:").contains("custom setup"), "{out}");
 }
+
+// ---------- a PAC address Hopswitch left behind ----------
+
+fn own_pac(port: u16) -> ProxyState {
+    ProxyState::Pac(PacConfig::loopback(port))
+}
+
+#[test]
+fn status_says_when_hopswitchs_own_pac_address_has_nobody_behind_it() {
+    let e = env();
+    e.net.write_proxy(&own_pac(8123)).unwrap();
+
+    let out = e.ok(&["status"]);
+
+    let line = line_with(&out, "proxy:");
+    assert!(
+        line.contains("http://127.0.0.1:8123/hopswitch.pac"),
+        "{out}"
+    );
+    assert!(line.contains("nothing is listening"), "{out}");
+    assert!(line.contains("hopswitch off"), "{out}");
+}
+
+#[test]
+fn status_says_when_hopswitchs_own_pac_address_is_being_served() {
+    let e = env_with(FakeProber::new().with_local_port(8123, Health::Alive { latency_ms: 1 }));
+    e.net.write_proxy(&own_pac(8123)).unwrap();
+
+    let out = e.ok(&["status"]);
+
+    let line = line_with(&out, "proxy:");
+    assert!(line.contains("served by Hopswitch"), "{out}");
+    assert!(!line.contains("nothing is listening"), "{out}");
+}
+
+#[test]
+fn status_notices_a_dead_address_even_while_a_session_is_active() {
+    let e = env();
+    e.ok(&["proxy", "add", "work", "socks5://work.example:1080"]);
+    e.ok(&["proxy", "use", "work"]);
+    // What a crash leaves: a session is saved, and the system points at a dead PAC address.
+    e.net.write_proxy(&own_pac(8123)).unwrap();
+
+    let out = e.ok(&["status"]);
+
+    assert!(
+        line_with(&out, "proxy:").contains("nothing is listening"),
+        "{out}"
+    );
+}
+
+#[test]
+fn off_removes_a_dead_own_address_when_no_original_was_saved() {
+    for args in [["off"].as_slice(), ["proxy", "off"].as_slice()] {
+        let e = env();
+        e.net.write_proxy(&own_pac(8123)).unwrap();
+
+        let out = e.ok(args);
+
+        assert_eq!(
+            e.net.read_proxy().unwrap(),
+            ProxyState::Disabled,
+            "{args:?}"
+        );
+        assert!(out.contains("no saved original"), "{args:?}: {out}");
+    }
+}
+
+#[test]
+fn off_leaves_an_own_address_alone_while_it_is_being_served() {
+    let e = env_with(FakeProber::new().with_local_port(8123, Health::Alive { latency_ms: 1 }));
+    e.net.write_proxy(&own_pac(8123)).unwrap();
+
+    let out = e.ok(&["off"]);
+
+    assert_eq!(e.net.read_proxy().unwrap(), own_pac(8123));
+    assert!(out.contains("Nothing to restore"), "{out}");
+}
+
+#[test]
+fn off_leaves_a_pac_script_somebody_else_set_alone() {
+    let e = env();
+    let foreign = ProxyState::Pac(PacConfig::new("http://wpad.corp/proxy.pac").unwrap());
+    e.net.write_proxy(&foreign).unwrap();
+
+    let out = e.ok(&["off"]);
+
+    assert_eq!(e.net.read_proxy().unwrap(), foreign);
+    assert!(out.contains("Nothing to restore"), "{out}");
+}
+
+#[test]
+fn off_with_a_saved_original_still_restores_it_when_the_address_is_dead() {
+    let e = env();
+    e.ok(&["proxy", "add", "work", "socks5://work.example:1080"]);
+    e.ok(&["proxy", "use", "work"]);
+    e.net.write_proxy(&own_pac(8123)).unwrap();
+
+    e.ok(&["off"]);
+
+    assert_eq!(e.net.read_proxy().unwrap(), users_proxy());
+}
+
+// ---------- --version ----------
+
+#[test]
+fn version_prints_the_name_and_the_version_and_touches_nothing() {
+    let e = env();
+    for flag in ["--version", "-V"] {
+        let out = e.ok(&[flag]);
+        assert_eq!(
+            out,
+            format!("hopswitch {}\n", env!("CARGO_PKG_VERSION")),
+            "{flag}"
+        );
+    }
+    assert!(
+        !e.file("profiles.json").exists(),
+        "no settings were created"
+    );
+}
+
+#[test]
+fn version_takes_no_arguments() {
+    let e = env();
+    let (result, _) = e.run(&["--version", "extra"]);
+    assert!(matches!(result, Err(CliError::Usage(_))), "{result:?}");
+}

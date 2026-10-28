@@ -7,6 +7,8 @@ use crate::CliError;
 pub enum Command {
     /// Show usage.
     Help,
+    /// Show the program name and version.
+    Version,
     /// Show the proxy and DNS state.
     Status,
     /// List the built-in presets.
@@ -158,6 +160,7 @@ pub fn parse(args: &[String]) -> Result<Command, CliError> {
     };
     match first.as_str() {
         "help" | "--help" | "-h" => Ok(Command::Help),
+        "--version" | "-V" => no_args(rest, Command::Version),
         "status" => no_args(rest, Command::Status),
         "presets" => no_args(rest, Command::Presets),
         "off" => no_args(rest, Command::Off),
