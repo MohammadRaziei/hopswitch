@@ -58,6 +58,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "hopswitch-pacserver"
+version = "0.1.0"
+dependencies = [
+ "hopswitch-core",
+]
+
+[[package]]
 name = "hopswitch-platform-windows"
 version = "0.1.0"
 dependencies = [

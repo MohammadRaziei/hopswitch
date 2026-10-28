@@ -10,6 +10,9 @@ use crate::ValidationError;
 /// Longest address kept. A cap of our own choosing, far above any real PAC address; not a limit of
 /// any particular client.
 const MAX_URL_LEN: usize = 2048;
+/// Where Hopswitch's own PAC server serves its script; the whole address is
+/// `http://127.0.0.1:<port>` followed by this path.
+pub const HOPSWITCH_PAC_PATH: &str = "/hopswitch.pac";
 /// The address schemes a PAC script can be loaded from.
 const SCHEMES: [&str; 3] = ["http://", "https://", "file://"];
 
@@ -59,6 +62,35 @@ impl PacConfig {
         Ok(Self {
             url: url.to_owned(),
         })
+    }
+
+    /// The address of Hopswitch's own PAC server on `port` (loopback, [`HOPSWITCH_PAC_PATH`]).
+    #[must_use]
+    pub fn loopback(port: u16) -> Self {
+        Self {
+            url: format!("http://127.0.0.1:{port}{HOPSWITCH_PAC_PATH}"),
+        }
+    }
+
+    /// The port, when this is exactly the address of Hopswitch's own PAC server
+    /// (`http://127.0.0.1:<port>/hopswitch.pac`, nothing else), so that a setting left behind by a
+    /// crashed Hopswitch can be told apart from a PAC script an organisation set.
+    #[must_use]
+    pub fn hopswitch_port(&self) -> Option<u16> {
+        let rest = self.url.get(7..).filter(|_| {
+            self.url
+                .get(..7)
+                .is_some_and(|scheme| scheme.eq_ignore_ascii_case("http://"))
+        })?;
+        let (authority, path) = rest.split_once('/')?;
+        if path != &HOPSWITCH_PAC_PATH[1..] {
+            return None;
+        }
+        let digits = authority.strip_prefix("127.0.0.1:")?;
+        if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        digits.parse::<u16>().ok().filter(|port| *port != 0)
     }
 
     /// The script address, as given.

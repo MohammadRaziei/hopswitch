@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-26, step 07v, 448 tests green; see the git log for HEAD)
+# HANDOFF — Hopswitch (state at 2026-10-26, step 07x, 477 tests green; see the git log for HEAD)
 
 > **Paste-in starter for the new chat** (the user writes Persian, informal; attach the project zip,
 > this file; **do not ask him to paste CI results, read them yourself, see §8**):
@@ -15,13 +15,13 @@
 
 * **Hopswitch** = a cross-platform desktop **client** that switches the **system proxy** and **system DNS**
   between saved profiles (tray + UI planned). It never runs or ships a proxy server.
-* **Built and tested (pure Rust, 448 tests):** domain model, services with exact snapshot/restore,
+* **Built and tested (pure Rust, 477 tests):** domain model, services with exact snapshot/restore,
   JSON persistence, Windows proxy adapter, a real connectivity prober (DNS / HTTP / SOCKS), auto connect +
   proxy groups ("fastest of ..."), and a full **CLI** (`hopswitch`). **Not built:** the Tauri shell and UI,
   Windows DNS (needs admin), macOS and Linux adapters, per-domain rules.
 * **Phase 2 is under way.** CI is green and the `PAC benchmark` passed the ADR-0011 gate on real Windows
   (details in §10). Done: `RuleList` (importer/normaliser) and `ProxyState::Pac(PacConfig)` (core, Windows
-  adapter, CLI `status`). Rules profiles exist in the model (07q) and the PAC generator exists (07r). Next: decide the SOCKS question (§10) and then §9 step 5, the local PAC server.
+  adapter, CLI `status`). Rules profiles exist in the model (07q) and the PAC generator exists (07r). The SOCKS question is decided (fail closed, §10) and the PAC server exists (07w, crate `hopswitch-pacserver`). Next: what is left of §9 step 5 (below), then step 6.
 * **Process is strict:** TDD (red seen before green), quality gate before every commit, conventional
   commits, zip the whole project after every step (`present_files`).
 
@@ -260,9 +260,27 @@ override it) or a bug in these two scripts.
       bucket format, ES3 only, plain host names `DIRECT`, lowercase, `hasOwnProperty` guard. Must pass the same
       exhaustive reference test (every listed domain, a subdomain of each, near-misses, look-alikes) run with Node in CI.
       Budget: hard 1 000 000 bytes, target 750 000.
-   5. **Local PAC server** on `127.0.0.1` (std only) + the rule that applying a `Rules` profile needs a running
-      Hopswitch process (desktop app, or an explicit `hopswitch serve`); watchdog/cleanup of the PAC setting on exit
-      and after a crash (extends the restore story).
+   5. **Local PAC server** — **server DONE (07w)**: `crates/pacserver`, `PacServer::start(script)`, `.url()` (a
+      `PacConfig`), `.set_script()`, `.stop()`/drop; loopback only, free port, std only; refuses a wrong `Host` header
+      (DNS rebinding, 403), one thread per connection capped at 32, `431` over 8 KiB of headers, `no-store`, GET/HEAD
+      only. 22 tests over real sockets (stressed 30x, three deliberate breakages: two caught; the drain-after-reply
+      in `finish()` is **not** covered by any test on Linux, it protects against a reset that destroys the reply on
+      Windows). **Still to build:** (a) the glue that turns a `RulesProfile` into a running server plus
+      `ProxyState::Pac(server.url())` on the Windows adapter, with the **SOCKS check** (`PacPlan::uses_socks()` ->
+      refuse, ADR-0011) and a resolver for group targets; (b) the rule that applying a `Rules` profile needs a running
+      Hopswitch process (desktop app, or an explicit `hopswitch serve`); (c) watchdog/cleanup of the PAC setting on
+      exit and after a crash. **What is already solved (07x):** the session snapshot is persisted *before* the system
+      is changed, so after a crash `resume(saved session)` + `deactivate()` restores the original exactly
+      (`NetworkService::activate_state`, test `a_crash_while_a_pac_is_applied_still_leaves_the_original_restorable`),
+      and `PacConfig::hopswitch_port()` tells Hopswitch's own server address from any other PAC (only the exact
+      `http://127.0.0.1:<port>/hopswitch.pac`). **What is NOT known:** what the system does while the PAC address is
+      dead. I first wrote "every web request fails"; that was a guess and is probably wrong for browsers, which
+      are generally reported to fall back to *direct* when a PAC cannot be loaded (a silent leak, not an outage);
+      neither is verified. The `PAC benchmark` now prints what WinHTTP returns for a dead PAC address (row "a PAC
+      address nothing listens on"): read it before choosing. **Still to build:** on start of any command, detect
+      `ProxyState::Pac(p)` with `p.hopswitch_port()` set and nothing listening there (a TCP connect through the
+      `probe` crate), and say so in `status` / restore the saved original; there is no watchdog while Hopswitch
+      is not running, so until the user starts it again the dead address stays.
    6. **Updater** (opt-in, release asset URL, check `.sha256` when published, cache, keep the old list on failure,
       download through the selected proxy, manual import) + bundled snapshot + `THIRD_PARTY_NOTICES`.
    7. CLI: `rules ...` commands; presets "Iran: local sites direct" and "Developer services" (both off by default).

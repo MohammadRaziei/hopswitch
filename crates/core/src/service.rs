@@ -164,7 +164,14 @@ impl<K: Kind> NetworkService<K> {
     /// Activating while another profile is active switches without losing the
     /// original snapshot.
     pub fn activate(&mut self, profile: &K::Profile) -> Result<(), ServiceError> {
-        let id = K::id(profile);
+        self.activate_state(K::id(profile), &K::target(profile))
+    }
+
+    /// Applies a ready-made `target` state under the name `id`, with the same guarantees as
+    /// [`NetworkService::activate`]: the original is snapshotted and persisted first, a failed apply
+    /// is rolled back, and switching keeps the original. For states that are not a single profile,
+    /// such as a PAC script that a running Hopswitch serves for a rules profile.
+    pub fn activate_state(&mut self, id: &str, target: &K::State) -> Result<(), ServiceError> {
         let before = K::read(&*self.network).map_err(ServiceError::Read)?;
 
         let first_activation = self.session.is_none();
@@ -175,7 +182,7 @@ impl<K: Kind> NetworkService<K> {
             self.session = Some(session);
         }
 
-        if let Err(apply) = K::write(&*self.network, &K::target(profile)) {
+        if let Err(apply) = K::write(&*self.network, target) {
             return Err(match K::write(&*self.network, &before) {
                 Ok(()) => {
                     if first_activation {

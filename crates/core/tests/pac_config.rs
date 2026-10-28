@@ -114,3 +114,52 @@ fn parses_from_text_like_a_proxy_address_does() {
     let err = "wpad".parse::<PacConfig>().unwrap_err();
     assert_eq!(err, ValidationError::InvalidPacUrl("wpad".to_owned()));
 }
+
+// ---------- recognising the address of Hopswitch's own PAC server ----------
+
+#[test]
+fn the_loopback_address_of_the_hopswitch_server_is_built_from_a_port() {
+    let pac = PacConfig::loopback(8123);
+    assert_eq!(pac.url(), "http://127.0.0.1:8123/hopswitch.pac");
+    assert_eq!(pac.hopswitch_port(), Some(8123));
+}
+
+#[test]
+fn only_the_exact_address_of_the_hopswitch_server_is_recognised() {
+    let own = [
+        ("http://127.0.0.1:1/hopswitch.pac", 1),
+        ("http://127.0.0.1:65535/hopswitch.pac", 65535),
+        ("HTTP://127.0.0.1:49152/hopswitch.pac", 49152),
+    ];
+    for (url, port) in own {
+        assert_eq!(
+            PacConfig::new(url).unwrap().hopswitch_port(),
+            Some(port),
+            "{url}"
+        );
+    }
+
+    let not_own = [
+        "http://localhost:8123/hopswitch.pac",
+        "http://127.0.0.2:8123/hopswitch.pac",
+        "http://[::1]:8123/hopswitch.pac",
+        "https://127.0.0.1:8123/hopswitch.pac",
+        "file:///hopswitch.pac",
+        "http://127.0.0.1/hopswitch.pac",
+        "http://127.0.0.1:0/hopswitch.pac",
+        "http://127.0.0.1:65536/hopswitch.pac",
+        "http://127.0.0.1:+80/hopswitch.pac",
+        "http://127.0.0.1:80a/hopswitch.pac",
+        "http://127.0.0.1:8123/other.pac",
+        "http://127.0.0.1:8123/hopswitch.pac/",
+        "http://127.0.0.1:8123/hopswitch.pac?x=1",
+        "http://127.0.0.1:8123/hopswitch.pac#x",
+        "http://127.0.0.1:8123",
+        "http://user@127.0.0.1:8123/hopswitch.pac",
+        "http://127.0.0.1@evil.example:8123/hopswitch.pac",
+        "http://wpad.corp/hopswitch.pac",
+    ];
+    for url in not_own {
+        assert_eq!(PacConfig::new(url).unwrap().hopswitch_port(), None, "{url}");
+    }
+}

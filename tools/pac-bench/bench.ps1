@@ -175,8 +175,16 @@ try {
     try { $raw = [WinHttpPac]::ResolveRaw($session, 'http://example.com/', "http://127.0.0.1:$Port/probe/$file") }
     catch { $raw = "FAILED: $($_.Exception.Message)" }
     finally { [WinHttpPac]::Close($session) }
-    $probe += [pscustomobject]@{ keyword = $keyword; winhttp_returned = $raw }
+    $probe += [pscustomobject]@{ keyword = "$keyword 127.0.0.1:9"; winhttp_returned = $raw }
   }
+
+  # Information only: what does WinHTTP say when the PAC address is dead, as after a crash of the
+  # process that served it? (Nothing listens on port 1.)
+  $session = [WinHttpPac]::Open()
+  try { $dead = [WinHttpPac]::ResolveRaw($session, 'http://example.com/', 'http://127.0.0.1:1/hopswitch.pac') }
+  catch { $dead = "FAILED: $($_.Exception.Message)" }
+  finally { [WinHttpPac]::Close($session) }
+  $probe += [pscustomobject]@{ keyword = 'a PAC address nothing listens on'; winhttp_returned = $dead }
 }
 finally {
   Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
@@ -196,8 +204,8 @@ $lines = @(
 foreach ($r in $rows) {
   $lines += "| $($r.variant) | $('{0:N0}' -f $r.bytes) | $($r.first_ms) | $($r.lookup_us) | $($r.wrong) | $($r.status) |"
 }
-$lines += @('', '### What WinHTTP returns for each PAC keyword', '', '| keyword in the script | WinHTTP returned |', '| --- | --- |')
-foreach ($p in $probe) { $lines += "| $($p.keyword) 127.0.0.1:9 | $($p.winhttp_returned) |" }
+$lines += @('', '### What WinHTTP returns for each PAC keyword, and for a dead PAC address', '', '| keyword in the script | WinHTTP returned |', '| --- | --- |')
+foreach ($p in $probe) { $lines += "| $($p.keyword) | $($p.winhttp_returned) |" }
 $summary = $lines -join "`n"
 # Also kept as a file: the workflow's report job publishes it (a step summary cannot be read by tools).
 Set-Content -Path (Join-Path $PacDir 'summary.md') -Value $summary -Encoding utf8

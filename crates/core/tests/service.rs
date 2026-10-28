@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use hopswitch_core::testing::{InMemoryNetwork, InMemoryStore};
 use hopswitch_core::{
-    restore_all, DnsConfig, DnsProfile, DnsService, DnsState, ProxyConfig, ProxyProfile,
+    restore_all, DnsConfig, DnsProfile, DnsService, DnsState, PacConfig, ProxyConfig, ProxyProfile,
     ProxyScheme, ProxyService, ProxyState, ServiceError, Session, SessionStore, StoreError,
     SystemError, SystemNetwork,
 };
@@ -447,4 +447,93 @@ fn restore_all_still_restores_dns_when_the_proxy_restore_fails() {
     assert_eq!(err.proxy, Some(ServiceError::Restore(denied())));
     assert_eq!(err.dns, None);
     assert_eq!(b.net.read_dns().unwrap(), DnsState::Automatic);
+}
+
+// ---------- activating a ready-made state (a PAC script, not a proxy profile) ----------
+
+fn hopswitch_pac() -> ProxyState {
+    ProxyState::Pac(PacConfig::loopback(8123))
+}
+
+#[test]
+fn a_ready_made_state_is_applied_after_the_original_is_snapshotted() {
+    let mut p = proxy_setup();
+
+    p.service.activate_state("rules", &hopswitch_pac()).unwrap();
+
+    assert_eq!(p.net.read_proxy().unwrap(), hopswitch_pac());
+    assert_eq!(p.service.active_id(), Some("rules"));
+    let session = p.service.session().unwrap();
+    assert_eq!(session.original(), &users_proxy());
+    assert_eq!(p.store.saved().as_ref(), Some(session));
+}
+
+#[test]
+fn deactivating_after_a_ready_made_state_restores_the_original() {
+    let mut p = proxy_setup();
+    p.service.activate_state("rules", &hopswitch_pac()).unwrap();
+
+    p.service.deactivate().unwrap();
+
+    assert_eq!(p.net.read_proxy().unwrap(), users_proxy());
+    assert!(p.store.saved().is_none());
+}
+
+#[test]
+fn moving_between_a_profile_and_a_ready_made_state_keeps_the_original() {
+    let mut p = proxy_setup();
+    p.service
+        .activate(&proxy_profile("a", "a.example"))
+        .unwrap();
+
+    p.service.activate_state("rules", &hopswitch_pac()).unwrap();
+    assert_eq!(p.service.session().unwrap().original(), &users_proxy());
+    assert_eq!(p.service.active_id(), Some("rules"));
+
+    p.service
+        .activate(&proxy_profile("b", "b.example"))
+        .unwrap();
+    assert_eq!(p.service.session().unwrap().original(), &users_proxy());
+
+    p.service.deactivate().unwrap();
+    assert_eq!(p.net.read_proxy().unwrap(), users_proxy());
+}
+
+#[test]
+fn a_failed_ready_made_state_is_rolled_back_like_a_failed_profile() {
+    let mut p = proxy_setup();
+    p.net.fail_next_proxy_writes(1, denied());
+
+    let err = p
+        .service
+        .activate_state("rules", &hopswitch_pac())
+        .unwrap_err();
+
+    assert!(matches!(err, ServiceError::Apply(_)), "{err:?}");
+    assert_eq!(p.net.read_proxy().unwrap(), users_proxy());
+    assert_eq!(p.service.active_id(), None);
+    assert!(p.store.saved().is_none());
+}
+
+#[test]
+fn a_crash_while_a_pac_is_applied_still_leaves_the_original_restorable() {
+    let net = Arc::new(InMemoryNetwork::new().with_proxy(users_proxy()));
+    let store = Arc::new(InMemoryStore::new());
+    {
+        let mut service = ProxyService::new(net.clone(), store.clone());
+        service.activate_state("rules", &hopswitch_pac()).unwrap();
+        // The process dies here: no deactivate, nothing in memory survives.
+    }
+    assert_eq!(net.read_proxy().unwrap(), hopswitch_pac());
+
+    let mut after_restart = ProxyService::new(net.clone(), store.clone());
+    after_restart.resume(
+        store
+            .saved()
+            .expect("the session was persisted before the change"),
+    );
+    after_restart.deactivate().unwrap();
+
+    assert_eq!(net.read_proxy().unwrap(), users_proxy());
+    assert!(store.saved().is_none());
 }

@@ -1,0 +1,14 @@
+[package]
+name = "hopswitch-pacserver"
+description = "A loopback HTTP server that hands a PAC script to the system proxy settings"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+hopswitch-core = { path = "../core" }
