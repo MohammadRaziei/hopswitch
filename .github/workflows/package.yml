@@ -1,0 +1,141 @@
+name: Package
+
+# Builds every release file. Called by release.yml; it can also be run by hand, and it runs on a pull
+# request that touches how things are packaged, so that a broken package does not wait for a release.
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/package.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/cli/Cargo.toml'
+      - 'LICENSE'
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned, because these tools run in the release and a new version must not change it silently.
+  CARGO_DEB_VERSION: "3.8.0"
+  CARGO_GENERATE_RPM_VERSION: "0.21.1"
+  CARGO_WIX_VERSION: "0.3.9"
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux is built against musl: one static file that runs on any distribution, old
+          # servers included, instead of needing the glibc of the machine that built it.
+          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          # Both macOS targets are built on the Apple-silicon runner.
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-apple-darwin, os: macos-latest }
+          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Read the version from Cargo.toml
+        run: echo "VERSION=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)" >> "$GITHUB_ENV"
+
+      - name: Install musl tools
+        if: contains(matrix.target, 'linux-musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release --locked -p hopswitch-cli --target ${{ matrix.target }}
+
+      - name: Smoke test
+        # The Intel Mac binary is built on an Apple-silicon runner and is not run here.
+        if: matrix.target != 'x86_64-apple-darwin'
+        run: |
+          binary=target/${{ matrix.target }}/release/hopswitch
+          [ -f "$binary.exe" ] && binary="$binary.exe"
+          "$binary" --version
+          if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
+            ldd "$binary" 2>&1 | grep -q "not a dynamic executable"
+          fi
+
+      - name: Package
+        run: |
+          name="hopswitch-$VERSION-${{ matrix.target }}"
+          mkdir -p "$name" dist
+          cp README.md LICENSE "$name/"
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            cp target/${{ matrix.target }}/release/hopswitch.exe "$name/"
+            powershell -NoProfile -Command "Compress-Archive -Path '$name' -DestinationPath 'dist/$name.zip'"
+          else
+            cp target/${{ matrix.target }}/release/hopswitch "$name/"
+            tar -czf "dist/$name.tar.gz" "$name"
+          fi
+
+      - name: Cache the packaging tools
+        if: contains(matrix.target, 'linux-musl')
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo-tools
+          key: cargo-tools-${{ runner.os }}-deb-${{ env.CARGO_DEB_VERSION }}-rpm-${{ env.CARGO_GENERATE_RPM_VERSION }}
+
+      - name: Build the .deb and .rpm
+        if: contains(matrix.target, 'linux-musl')
+        run: |
+          cargo install --locked --root "$HOME/.cargo-tools" cargo-deb@"$CARGO_DEB_VERSION" cargo-generate-rpm@"$CARGO_GENERATE_RPM_VERSION"
+          export PATH="$HOME/.cargo-tools/bin:$PATH"
+          # Both tools take the program from target/release/, so the musl build is put there
+          # rather than relying on how each tool maps --target onto the asset paths.
+          mkdir -p target/release
+          cp target/${{ matrix.target }}/release/hopswitch target/release/hopswitch
+          cargo deb -p hopswitch-cli --no-build --no-strip --output dist/
+          cargo generate-rpm -p crates/cli --output dist/
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  # The Windows installer. It is a separate job that may fail without stopping the release: the
+  # archive above already contains the same program.
+  msi:
+    name: build the Windows installer (.msi)
+    runs-on: windows-2022
+    continue-on-error: true
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo-tools
+          key: cargo-tools-${{ runner.os }}-wix-${{ env.CARGO_WIX_VERSION }}
+      - name: Build the .msi
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          cargo install --locked --root "$HOME/.cargo-tools" cargo-wix@"$CARGO_WIX_VERSION"
+          export PATH="$HOME/.cargo-tools/bin:$PATH"
+          cargo build --release --locked -p hopswitch-cli
+          cargo wix init -p hopswitch-cli --force
+          mkdir -p dist
+          cargo wix -p hopswitch-cli --no-build --nocapture --output "dist/hopswitch-$version-x86_64-pc-windows-msvc.msi"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-msi
+          path: dist/*.msi
+          if-no-files-found: error
+          retention-days: 14

@@ -481,3 +481,35 @@ override it) or a bug in these two scripts.
   forever, so it is only run by hand.
 * **Next:** MCP read-only (c) reusing `hopswitch-http` and the token file; then "apply a Rules profile" (§9 step 5),
   which needs this process. The API has no write endpoints yet, by design.
+
+## 07zg: release workflow (Step 11, first part), modelled on liburlparser
+
+* **Pattern (copied from `MohammadRaziei/liburlparser`, `.github/workflows/orchestrator.yml`):** a push to `master` builds everything and puts it in
+  the pre-release `__beta__`; a tag `v<version>` does the same into a real release; anything else (a manual run on another branch) only builds.
+  Differences from liburlparser, on purpose: old `__beta__` files are deleted only **after** every file was built (a failed build leaves the previous
+  beta intact), and the `__beta__` tag is moved to the new commit (there it stays on the first one); `gh` is used instead of `softprops/action-gh-release`.
+* **Files:** `.github/workflows/release.yml` (orchestrator: `init` decides release name and checks that the tag equals `v<Cargo version>`; `package`
+  calls the reusable workflow; `publish` writes `SHA256SUMS`, the release text from `.github/release_template.md`, moves the tag, creates/updates the
+  release, replaces the files; only for a tag or `master`; `concurrency` queues runs instead of cancelling them), `.github/workflows/package.yml`
+  (reusable: `workflow_call`, also `workflow_dispatch`, and a pull request that touches `Cargo.toml`, `Cargo.lock`, `crates/cli/Cargo.toml`, `LICENSE` or
+  itself), `.github/release_template.md` (placeholders `RELEASE_NAME`, `VERSION_STRING`, `BUILD_NOTE`). actionlint is clean on all three.
+* **What is built** (`package.yml`): `x86_64-unknown-linux-musl` (ubuntu; static; also the `.deb` and `.rpm`), `aarch64-apple-darwin` and `x86_64-apple-darwin`
+  (both on `macos-latest`), `x86_64-pc-windows-msvc` (`.zip`), and an `msi` job (windows-2022, `cargo wix init` + `cargo wix`, **`continue-on-error`**) so a WiX
+  problem cannot stop the release. Each build: `cargo build --release --locked -p hopswitch-cli --target T`, smoke test (`--version`; on Linux also "not a
+  dynamic executable"), archive with README + LICENSE. Tool versions are pinned (cargo-deb 3.8.0, cargo-generate-rpm 0.21.1, cargo-wix 0.3.9) and installed
+  into a cached `~/.cargo-tools`. Both Linux tools read the program from `target/release/hopswitch`, so the workflow copies the musl build there instead of
+  relying on how each tool maps `--target` onto asset paths.
+* **Also added:** `LICENSE` (MIT, "Copyright (c) 2026 Hopswitch contributors": the repo declared MIT but had no file; **the user should confirm the
+  copyright holder**), `[profile.release]` (strip, lto, codegen-units 1; deliberately no `panic = "abort"` because `hopswitch-http` relies on `catch_unwind`),
+  `repository` in `[workspace.package]`, `[package.metadata.deb]` and `[package.metadata.generate-rpm]` in `crates/cli/Cargo.toml`.
+* **Checked here (Rust 1.99.1, glibc build, not musl):** release binary (937 KB); `.deb` built with the exact workflow command, installed with `dpkg -i`,
+  `hopswitch --version` run from `/usr/bin`, removed; `.rpm` built and its contents read with `rpm -qlp`; the archive and checksum steps; the real `run:`
+  scripts of `init` and `publish` executed against a fake `gh` and `git` (tag matching / not matching, beta with a new and with an existing release, tag
+  release: the recorded calls are the intended ones). 545 tests, fmt and clippy still green on 1.75. The glibc `.rpm` required GLIBC up to 2.34: this is why
+  Linux uses musl in CI.
+* **NOT verified (no musl std, no WiX, no macOS, no GitHub API here):** the musl build and its "static" check, the Windows `.zip` step (PowerShell
+  `Compress-Archive`), the `.msi` job, the macOS targets, the cache of the tools, and the real `gh release ...` calls and the tag push (permissions,
+  tag protection rules). Next step for the user: push to master, read the "Release" run, fix what fails. An empty `Depends:` line is written in the `.deb`
+  control file (dpkg accepted it); if a tool complains, drop `depends = ""` and check what cargo-deb writes for a static binary.
+* **Not done:** signing (Windows Authenticode, macOS notarization: an unsigned download from a browser shows a warning), Linux aarch64, an install script
+  (the stable URLs `releases/download/__beta__/<file>` and `releases/latest/download/<file>` are meant for it), an updater, a README "Install" section.
