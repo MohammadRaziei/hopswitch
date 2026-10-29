@@ -512,6 +512,9 @@ override it) or a bug in these two scripts.
   scripts of `init` and `publish` executed against a fake `gh` and `git` (tag matching / not matching, beta with a new and with an existing release, tag
   release: the recorded calls are the intended ones). 545 tests, fmt and clippy still green on 1.75. The glibc `.rpm` required GLIBC up to 2.34: this is why
   Linux uses musl in CI.
+* **First real run (2026-10-29, run #2):** `package / build x86_64-unknown-linux-musl` built fine and `hopswitch --version` ran, but the "static" check failed: it
+  looked for the text "not a dynamic executable" in `ldd`, and `ldd` on a static-pie file prints "statically linked". Replaced by "no INTERP header in
+  `readelf -l`" (tested on a musl-gcc static-pie file and on the dynamic glibc build). The steps after it (archive, `.deb`, `.rpm`) had not run; the other jobs were not seen.
 * **NOT verified (no musl std, no WiX, no macOS, no GitHub API here):** the musl build and its "static" check, the Windows `.zip` step (PowerShell
   `Compress-Archive`), the `.msi` job, the macOS targets, the cache of the tools, and the real `gh release ...` calls and the tag push (permissions,
   tag protection rules). Next step for the user: push to master, read the "Release" run, fix what fails. An empty `Depends:` line is written in the `.deb`

@@ -65,7 +65,12 @@ jobs:
           [ -f "$binary.exe" ] && binary="$binary.exe"
           "$binary" --version
           if [ "${{ matrix.os }}" = "ubuntu-latest" ]; then
-            ldd "$binary" 2>&1 | grep -q "not a dynamic executable"
+            # A static program has no dynamic loader (INTERP). `ldd` is not used: for a static-pie
+            # file it prints "statically linked" on new systems and "not a dynamic executable" on old.
+            if readelf -l "$binary" | grep -q INTERP; then
+              echo "::error::$binary is dynamically linked; the musl build must be static"
+              exit 1
+            fi
           fi
 
       - name: Package
