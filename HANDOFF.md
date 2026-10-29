@@ -499,6 +499,13 @@ override it) or a bug in these two scripts.
   dynamic executable"), archive with README + LICENSE. Tool versions are pinned (cargo-deb 3.8.0, cargo-generate-rpm 0.21.1, cargo-wix 0.3.9) and installed
   into a cached `~/.cargo-tools`. Both Linux tools read the program from `target/release/hopswitch`, so the workflow copies the musl build there instead of
   relying on how each tool maps `--target` onto asset paths.
+* **Report of the release run (07zi):** job `report` at the end of `release.yml` (`if: always()`, `continue-on-error`) builds the same kind of report as
+  `ci.yml` with `tools/ci/report.py` (failed jobs and why) plus, after a successful publish, `tools/ci/release_assets.sh` (files of the release with sizes, required
+  files that are missing, the `.msi` as optional) and writes it to the **`ci-report` branch as `release.md`** (`tools/ci/publish.sh`). Read it like `ci.md`:
+  `https://raw.githubusercontent.com/mohammadraziei/hopswitch/ci-report/release.md`. It is not attached to the release itself, because a failed build never
+  reaches the release. 6 unit tests for the script (`tools/ci/test_release_assets.py`, run by the lint job's `unittest discover`), 3 deliberate breakages caught,
+  `publish.sh` checked against a local bare remote. **Nothing of it has run on GitHub yet** (on 2026-10-29 `release.yml` and `package.yml` were not on master and
+  there was no `__beta__` release); `api.github.com` was rate-limited from the sandbox, so the public pages and raw files are what can be read.
 * **Also added:** `LICENSE` (MIT, "Copyright (c) 2026 Hopswitch contributors": the repo declared MIT but had no file; **the user should confirm the
   copyright holder**), `[profile.release]` (strip, lto, codegen-units 1; deliberately no `panic = "abort"` because `hopswitch-http` relies on `catch_unwind`),
   `repository` in `[workspace.package]`, `[package.metadata.deb]` and `[package.metadata.generate-rpm]` in `crates/cli/Cargo.toml`.

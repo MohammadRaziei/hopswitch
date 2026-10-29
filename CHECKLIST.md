@@ -140,6 +140,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 ### 🟨 Step 11 — Packaging & CI (GitHub Actions matrix, signed installers, updater)
 
 - [x] Release workflow (07zg), modelled on liburlparser: `release.yml` (push to master -> pre-release `__beta__`, tag `v*` -> real release; files replaced only after every build succeeded; the `__beta__` tag moves), `package.yml` (reusable; also on pull requests that touch packaging), `release_template.md`. Files: `.tar.gz` (Linux x86_64 musl, macOS arm64 and x64), `.zip` (Windows x64), `.deb`, `.rpm`, `.msi`, `SHA256SUMS`. Checked locally: actionlint, release build, `.deb` installed with dpkg and run, `.rpm` contents, archive + checksum steps, the real scripts against a fake `gh`/`git`. **Not run on GitHub yet.**
+- [x] Release run report: `release.md` on the `ci-report` branch (failed jobs, files of the release, missing files), with unit tests (07zi). Not seen on GitHub yet.
 - [ ] First run of the release workflow on GitHub (push to master) read and fixed; the `.msi` job (cargo-wix, `continue-on-error`) and the musl build are the unverified parts.
 - [ ] Linux aarch64 packages; code signing (Windows Authenticode, macOS notarization); install script; updater; README "Install" section once a release exists.
 

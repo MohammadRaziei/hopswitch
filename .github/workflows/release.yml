@@ -117,3 +117,40 @@ jobs:
               --notes-file release.md $flag
           fi
           gh release upload "$RELEASE_NAME" dist/* --repo "$GITHUB_REPOSITORY"
+
+  # Written whatever happened, like the report of ci.yml: which jobs failed and why, and (after a
+  # publish) which files the release has and which are missing. It goes to the `ci-report` branch as
+  # `release.md`, not onto the release, because a failed build never reaches the release.
+  report:
+    name: release report
+    if: always()
+    needs: [init, package, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Describe the files of the release
+        if: needs.publish.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash tools/ci/release_assets.sh "${{ needs.init.outputs.release_name }}" "${{ needs.init.outputs.version }}" > extra.md
+      - name: Build the report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          extra=""
+          [ -f extra.md ] && extra="--extra extra.md"
+          python3 tools/ci/report.py --repo "$GITHUB_REPOSITORY" --run "$GITHUB_RUN_ID" \
+            --skip "release report" --out report.md $extra
+      - name: Show it on the run page
+        run: cat report.md >> "$GITHUB_STEP_SUMMARY"
+      # A pull request from a fork has a read-only token; a push or a manual run does not.
+      - name: Publish it to the ci-report branch
+        if: github.event_name != 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash tools/ci/publish.sh report.md release.md
