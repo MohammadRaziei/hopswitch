@@ -472,7 +472,10 @@ override it) or a bug in these two scripts.
   of the security rules each caught by a named test; fmt, clippy `-D warnings`, rustdoc `-D warnings` and all 545 tests
   green on Rust 1.75 and 1.99.1 (conda). Note again: clippy 1.99 flags `assert!(x.is_empty())` in tests (use
   `assert_eq!`); 1.75 does not, so check on both.
-* **Not verified, by necessity:** Windows and macOS CI for these changes (nothing was pushed); the Windows token file
+* **CI (read 2026-10-29 17:15 UTC):** commit `d07f8d5` on master, all 6 of 6 jobs green (fmt + clippy, Windows registry,
+  test on ubuntu/macos/windows, Rust 1.75). The `pac-bench` report is still the one for `e7ff0cc`, i.e. the
+  "PAC through WinHTTP" job has not been seen to run since `pacserver` was moved onto `hopswitch-http`; check it.
+* **Not verified, by necessity:** the Windows token file
   keeps the folder's inherited rights (no explicit ACL); the auto-connect loop inside `serve` (a thread that calls
   `auto_run` and retries every 30 s when auto connect is off) is not covered by a test, and `serve` itself blocks
   forever, so it is only run by hand.
