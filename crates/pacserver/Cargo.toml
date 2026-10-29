@@ -12,3 +12,4 @@ workspace = true
 
 [dependencies]
 hopswitch-core = { path = "../core" }
+hopswitch-http = { path = "../http" }

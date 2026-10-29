@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-29, step 07z, 504 tests green; see the git log for HEAD)
+# HANDOFF — Hopswitch (state at 2026-10-29, step 07zd, 523 tests green; see the git log for HEAD)
 
 > **Paste-in starter for the new chat** (the user writes Persian, informal; attach the project zip,
 > this file; **do not ask him to paste CI results, read them yourself, see §8**):
@@ -39,13 +39,13 @@
 
 * **Hopswitch** = a cross-platform desktop **client** that switches the **system proxy** and **system DNS**
   between saved profiles (tray + UI planned). It never runs or ships a proxy server.
-* **Built and tested (pure Rust, 504 tests):** domain model, services with exact snapshot/restore,
+* **Built and tested (pure Rust, 523 tests):** domain model, services with exact snapshot/restore,
   JSON persistence, Windows proxy adapter, a real connectivity prober (DNS / HTTP / SOCKS), auto connect +
   proxy groups ("fastest of ..."), and a full **CLI** (`hopswitch`). **Not built:** the Tauri shell and UI,
   Windows DNS (needs admin), macOS and Linux adapters, per-domain rules.
 * **Phase 2 is under way.** CI is green and the `PAC benchmark` passed the ADR-0011 gate on real Windows
   (details in §10). Done: `RuleList` (importer/normaliser) and `ProxyState::Pac(PacConfig)` (core, Windows
-  adapter, CLI `status`). Rules profiles exist in the model (07q) and the PAC generator exists (07r). The SOCKS question is decided (fail closed, §10) and the PAC server exists (07w, crate `hopswitch-pacserver`). Next: what is left of §9 step 5 (below), then step 6.
+  adapter, CLI `status`). Rules profiles exist in the model (07q) and the PAC generator exists (07r). The SOCKS question is decided (fail closed, §10) and the PAC server exists (07w, crate `hopswitch-pacserver`). Since 07za the HTTP plumbing (loopback only, `Host` check, limits, panic-safe handlers) is crate `hopswitch-http`, shared by the PAC server and the coming `serve`. Next: what is left of §9 step 5 (below), then step 6.
 * **Process is strict:** TDD (red seen before green), quality gate before every commit, conventional
   commits, zip the whole project after every step (`present_files`).
 

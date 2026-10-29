@@ -34,10 +34,14 @@
        a browser never sends to a server.
      * The `Host` header must be the server's own address (as in `hopswitch-pacserver`; stops DNS
        rebinding) and a request with a foreign `Origin` is refused. No CORS headers are ever sent.
-     * A non-loopback `--ip` (`0.0.0.0`, a LAN address) is **refused** unless `--allow-remote` is also
-       given, and then a warning is printed that the traffic is plain HTTP. The recommended way to reach a
-       server is `ssh -L 47831:127.0.0.1:47831 user@server`. TLS is not part of this decision: it needs a
-       library or a certificate story and gets its own ADR if wanted.
+     * **Loopback only (changed 2026-10-29, at the user's request).** A non-loopback `--ip` (`0.0.0.0`, a
+       LAN address) is always refused, and there is no `--allow-remote`; `--ip` accepts only loopback
+       addresses (`127.0.0.0/8`, `::1`). The way to reach a server is
+       `ssh -L 47831:127.0.0.1:47831 user@server`, which also encrypts. TLS is not part of Hopswitch:
+       with loopback only there is nothing to protect on the wire and no certificate to manage. If a
+       reverse proxy is ever wanted, that is a new ADR.
+     * The loopback, `Host`, size and timeout protections live once in crate `hopswitch-http`
+       (std only); the PAC server and the web interface are handlers on top of it (07za).
      * The server never serves files from disk; the interface is embedded in the binary.
   6. **One interface, two shells.** The web interface is built once (React, ADR-0001/0004). The GUI shows the
      same pages; the API is the contract. (Whether the GUI talks to the same HTTP API or to Tauri commands

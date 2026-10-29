@@ -58,10 +58,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hopswitch-http"
+version = "0.1.0"
+
+[[package]]
 name = "hopswitch-pacserver"
 version = "0.1.0"
 dependencies = [
  "hopswitch-core",
+ "hopswitch-http",
 ]
 
 [[package]]

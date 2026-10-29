@@ -1,6 +1,6 @@
 //! The `hopswitch` executable: wires the real system into the library.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::sync::Arc;
 
@@ -23,7 +23,7 @@ fn bare() -> ExitCode {
         Platform::current(),
         &|key| std::env::var(key).ok(),
         &exe_dir,
-        &|path| path.is_file(),
+        &Path::is_file,
     );
     match launch {
         Launch::Gui(program) => match Command::new(&program).spawn() {
