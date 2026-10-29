@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-26, step 07z, 504 tests green; see the git log for HEAD)
+# HANDOFF — Hopswitch (state at 2026-10-29, step 07z, 504 tests green; see the git log for HEAD)
 
 > **Paste-in starter for the new chat** (the user writes Persian, informal; attach the project zip,
 > this file; **do not ask him to paste CI results, read them yourself, see §8**):
@@ -10,6 +10,30 @@
 > Reply in Persian (casual, friendly). Code, comments, commit messages and docs stay in English.
 
 ---
+
+## 0. Where we stopped (read this first)
+
+* **Pushed vs not.** When this file was written the newest CI report on the `ci-report` branch was for master
+  `e7ff0cc` (all 6 jobs green, PAC benchmark green). Steps **07y** (stale PAC detection: `status`/`off`) and **07z**
+  (`--version`, bare-command decision, ADR-0012) were *not yet pushed*. Compare the report's `commit:` line with
+  `git log` in the zip before trusting it.
+* **Linux adapter question ANSWERED (2026-10-29):** the user wants shell proxy variables and delegated the
+  rest. Decided in ADR-0012 (his own refinement): a Hopswitch-owned `proxy.env`, and a managed block that
+  sources it written into the shell start file **once** and then left alone (`off` only empties the file).
+  Current user first, new shells only, system-wide later. Start files, block position and SOCKS mapping
+  still to research (step d). Do not ask him again.
+* **Choose the next piece with the user (all are specified):**
+  1. *Finish "apply a Rules profile"* (§9 step 5 rest): glue `RulesProfile` -> `PacPlan` -> `PacServer` ->
+     `activate_state(Pac(url))`, with the **SOCKS refusal** (decided: fail closed) and a resolver for group targets, plus
+     CLI `rules ...` commands. Needs a process that stays running (`serve`/daemon).
+  2. *ADR-0012 step (b)*: `hopswitch serve --ip --port` (defaults `127.0.0.1:47831`), bearer token, `Host`/`Origin`
+     checks, status endpoint; then MCP (read-only first), `service install`, UI pages, release builds.
+  3. *`#[non_exhaustive]`* on public enums before publishing the crates (small, open).
+  Recommendation: (2)(b) before (1), because (1) needs the long-running process that (2) creates.
+* **Working method that paid off:** TDD with the red step actually run; check tests catch deliberate breakage;
+  run everything on Rust 1.75 (apt) **and** 1.99.1 (conda, §7) before handing over; read CI from the `ci-report`
+  branch yourself; correct earlier claims in writing when a measurement contradicts them (twice this session).
+
 
 ## 0. The 60-second version
 

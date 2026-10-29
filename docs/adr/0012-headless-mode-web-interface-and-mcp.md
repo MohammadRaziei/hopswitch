@@ -55,11 +55,23 @@
      (`proxy use`, `off`, `auto ...`) exist only when started with `--allow-write`. It has no network
      listener. An assistant that can change a machine's proxy can redirect that machine's traffic, so
      writing is opt-in by the person who configured the server, not by the assistant.
-* **Not decided yet (asked of the user):** what the Linux adapter changes on a server. Servers have no
-  system proxy; programs read `http_proxy` / `no_proxy` variables, `apt` configuration, a Docker daemon
-  file or a `systemd` service. Each needs its own file and administrator rights. Until the user names
-  the targets, only `resolvectl`/`nmcli` DNS and a shell-environment managed block (ADR-0003) are
-  candidates and nothing is built on a guess.
+* **Linux adapter, first target (decided 2026-10-29; the user named shell proxy variables, left the rest to
+  us, then proposed the "source once" shape below, which replaces the first draft):** a "proxy" on a server
+  is a set of environment variables, and a running process cannot change the environment of shells that are
+  already open. So the adapter owns one file, `<settings dir>/proxy.env` (`export` lines for `http_proxy`,
+  `https_proxy`, `all_proxy`, `no_proxy` and the upper-case twins; `no_proxy` from the profile's bypass
+  list), and writes **once** a `core::managed_block` into the user's shell start file that only sources it
+  if it exists (ADR-0003, AGENT.md rule 7: backup first, damaged markers are refused). After that, `use`,
+  `off` and `auto` change only `proxy.env`; the start file is not touched again. `off` empties or removes
+  `proxy.env` and leaves the block (a no-op without the file); the block is removed only by an explicit
+  command. It affects **new shells only**; `status` and `use` must say so. **Scope: current user first**, no
+  administrator rights. System-wide (`/etc/profile.d/hopswitch.sh`) is a later, separate step with
+  per-action elevation (decision 3). `apt`, `docker` and DNS stay undecided and are not built.
+  **Open before building (researched in step (d), not guessed):** which start files (`.profile` is read by
+  login shells only, `.bashrc` mostly by interactive ones, non-interactive `ssh host cmd` and cron read
+  neither); where the block goes (a later `export http_proxy` by the user would override ours); how a SOCKS
+  profile maps to these variables (fail closed like the Windows PAC rule unless the tools' behaviour has
+  been read).
 * **Order of work:** (a) `--version` and the bare-command decision (pure, tested); (b) `serve` with token,
   loopback and the `Host`/`Origin` checks, and a status endpoint; (c) the MCP server (read-only first);
   (d) the Linux adapter for the targets the user names; (e) `service install`; (f) the interface pages;
