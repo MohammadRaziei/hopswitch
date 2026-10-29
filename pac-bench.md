@@ -1,9 +1,9 @@
 # CI report
 
-- commit: `e7ff0ccce8d2781fbac288d24de71e5022cbae75` on `master` - add hopswitch-pacserver crate and update Phase 2 checklist with local PAC server progress
-- event: push, run: https://github.com/MohammadRaziei/hopswitch/actions/runs/40655962822
+- commit: `85f778d69e3c908bcac53cf74a0014204ab8d12b` on `master` - feat: add release run report job for CI failure and asset summary tracking
+- event: push, run: https://github.com/MohammadRaziei/hopswitch/actions/runs/40973565266
 - result: **all green** (1 of 1 jobs ok)
-- written: 2026-10-28 08:21:48 UTC
+- written: 2026-10-29 23:31:36 UTC
 
 | job | result |
 | --- | --- |
@@ -17,10 +17,10 @@
 | --- | ---: | ---: | ---: | ---: | --- |
 | object-full | 2,276,542 |  |  |  | FAILED: Exception calling "Resolve" with "3" argument(s): "Unknown error (0x2f87)" 12167 |
 | object-ir | 1,074,053 |  |  |  | FAILED: Exception calling "Resolve" with "3" argument(s): "Unknown error (0x2f87)" 12167 |
-| bucket-ir | 649,466 | 750.4 | 160.7 | 0 | ok |
-| fod | 10,728 | 18.3 | 142.2 | 0 | ok |
-| rust-bucket-ir | 649,574 | 63.8 | 201.1 | 0 | ok |
-| rust-fod | 9,778 | 18.3 | 138.3 | 0 | ok |
+| bucket-ir | 649,466 | 456.6 | 260.6 | 0 | ok |
+| fod | 10,728 | 23.7 | 238.8 | 0 | ok |
+| rust-bucket-ir | 649,574 | 52.8 | 310.3 | 0 | ok |
+| rust-fod | 9,778 | 27.1 | 263.5 | 0 | ok |
 
 ### What WinHTTP returns for each PAC keyword, and for a dead PAC address
 
