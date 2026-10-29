@@ -82,6 +82,9 @@
   (g) release builds and the install script. Each step is independently useful and tested; none is
   announced as working until it has been run, and anything that can only run on a machine the sandbox
   does not have (Windows services, `launchd`, real GUI start) is marked untested in HANDOFF.
+* **Progress:** (a) done in 07z. (b) done in 07za-07ze: `hopswitch serve` with the token, loopback and
+  `Host`/`Origin` checks and `GET /api/status`; the shared server is crate `hopswitch-http`. Not yet: write
+  endpoints, interface pages, MCP, `service install`.
 * **Consequences:** The CLI crate stays free of window-system code. `hopswitch-gui` is a second binary
   in the same release. A new HTTP server (not the PAC server) is needed; it should share the request
   parsing and the `Host` check with `hopswitch-pacserver` instead of copying them.

@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-29, step 07zd, 523 tests green; see the git log for HEAD)
+# HANDOFF — Hopswitch (state at 2026-10-29, step 07ze, 545 tests green; see the git log for HEAD)
 
 > **Paste-in starter for the new chat** (the user writes Persian, informal; attach the project zip,
 > this file; **do not ask him to paste CI results, read them yourself, see §8**):
@@ -26,10 +26,11 @@
   1. *Finish "apply a Rules profile"* (§9 step 5 rest): glue `RulesProfile` -> `PacPlan` -> `PacServer` ->
      `activate_state(Pac(url))`, with the **SOCKS refusal** (decided: fail closed) and a resolver for group targets, plus
      CLI `rules ...` commands. Needs a process that stays running (`serve`/daemon).
-  2. *ADR-0012 step (b)*: `hopswitch serve --ip --port` (defaults `127.0.0.1:47831`), bearer token, `Host`/`Origin`
-     checks, status endpoint; then MCP (read-only first), `service install`, UI pages, release builds.
+  2. *ADR-0012 step (c)*: the MCP server, read-only first (on top of `hopswitch-http` and the same token rules);
+     then the Linux adapter (d), `service install` (e), UI pages (f), release builds (g). Step (b), `serve`, is
+     **done in 07za-07ze** (see "07ze" below).
   3. *`#[non_exhaustive]`* on public enums before publishing the crates (small, open).
-  Recommendation: (2)(b) before (1), because (1) needs the long-running process that (2) creates.
+  Recommendation: (1) next, because `serve` now exists as the long-running process it needs; or (2)(c).
 * **Working method that paid off:** TDD with the red step actually run; check tests catch deliberate breakage;
   run everything on Rust 1.75 (apt) **and** 1.99.1 (conda, §7) before handing over; read CI from the `ci-report`
   branch yourself; correct earlier claims in writing when a measurement contradicts them (twice this session).
@@ -39,7 +40,7 @@
 
 * **Hopswitch** = a cross-platform desktop **client** that switches the **system proxy** and **system DNS**
   between saved profiles (tray + UI planned). It never runs or ships a proxy server.
-* **Built and tested (pure Rust, 523 tests):** domain model, services with exact snapshot/restore,
+* **Built and tested (pure Rust, 545 tests):** domain model, services with exact snapshot/restore,
   JSON persistence, Windows proxy adapter, a real connectivity prober (DNS / HTTP / SOCKS), auto connect +
   proxy groups ("fastest of ..."), and a full **CLI** (`hopswitch`). **Not built:** the Tauri shell and UI,
   Windows DNS (needs admin), macOS and Linux adapters, per-domain rules.
@@ -388,9 +389,9 @@ override it) or a bug in these two scripts.
   `main.rs` wiring, checked on the real Linux binary (no display, display without GUI, display with a stand-in GUI
   script, and that any argument never starts the GUI). **Untested, by necessity:** starting a real GUI on
   Windows/macOS, `SSH_CONNECTION` handling on those two. The hint text must not mention `hopswitch serve` until
-  it exists (it is mentioned in the doc comment of `no_gui_hint` as the place to add it). **Not done:** `serve`,
-  MCP, Linux adapter, `service install`, release builds. **OPEN QUESTION to the user (asked twice):** what must the
-  Linux adapter change on a server (shell proxy variables, `apt`, `docker`, DNS)? Do not build it on a guess.
+  the interface *pages* exist (07ze made `serve` an API only, with no page at `/`; the doc comment of `no_gui_hint`
+  is the place to add it). **Not done:** MCP, Linux adapter, `service install`, release builds. **Linux adapter question: answered** (shell proxy
+  variables; see ADR-0012). Do not build `apt`/`docker`/DNS on a guess.
   Order of work is in ADR-0012: (b) `serve`, (c) MCP read-only, (d) Linux adapter, (e) `service install`, (f) UI pages,
   (g) releases.
 * **Decision in step 07o:** a PAC is `ProxyState::Pac` only when no manual proxy is in use or stored; `AutoDetect`
@@ -447,3 +448,33 @@ override it) or a bug in these two scripts.
 * Phase 3 (per-app): accept a local router (changes what the product is) or only "launch a program with the proxy"?
 * Confirm the UI direction in ADR-0004 and the profile editor for kinds; he promised to give design feedback.
 * Combos (apply a proxy and a DNS together) and TUN/VPN-style capture are out of scope for now.
+
+## 07za-07ze: `hopswitch serve` (ADR-0012 step b)
+
+* **`crates/http` (`hopswitch-http`, std only, 19 tests):** the HTTP plumbing shared by every local server.
+  `Server::start(addr, name, handler)` refuses anything but a loopback address (`InvalidInput`), checks `Host` (own
+  address or `localhost:<port>`; 403 otherwise; a missing `Host` is served), answers 400 for malformed requests and
+  431 above 8 KiB of headers, one thread per connection (cap 32; the slot is returned by a `Drop` guard, and a
+  panicking handler gets a 500), drops header values with a line break, and ignores a handler's `Content-Length` /
+  `Connection`. `hopswitch-pacserver` is now only a handler on it (its 22 tests were not changed).
+* **`hopswitch serve [--ip <loopback>] [--port N] [--no-auto]`** (`crates/cli/src/serve.rs`, 22 new tests over real
+  sockets). Default `127.0.0.1:47831`; `--port 0` picks a free port. A non-loopback `--ip` is a usage error that
+  points to `ssh -L`; there is **no** `--allow-remote` and **no** TLS (decided with the user, ADR-0012).
+  Token: 256 random bits from the OS (`getrandom`), file `web-token` in the settings folder, mode 0600 on Unix
+  (loosened files are tightened, damaged files replaced), constant-time comparison. Every `/api/` request needs
+  `Authorization: Bearer <token>` (scheme case-insensitive); the token is checked **before** the path (no route
+  probing); `Origin` must be the server's own or absent; no CORS headers; `Cache-Control: no-store`. The URL is printed
+  with the token after `#` so a browser never sends it. Only `GET`/`HEAD` exist. **Only endpoint so far:**
+  `GET /api/status` -> `{"version", "status"}` where `status` is the text of `hopswitch status`. `/` is a 404 (no pages).
+  `run()` handles `Command::Serve` like `auto run`; `Context` is now `Clone`.
+* **Checked:** the real binary run with an isolated HOME and probed with `curl` (401 without a token, JSON with it, 403
+  for a foreign `Host` and for a foreign `Origin`, token file `600`, `--ip 0.0.0.0` exits 2); 7 deliberate breakages
+  of the security rules each caught by a named test; fmt, clippy `-D warnings`, rustdoc `-D warnings` and all 545 tests
+  green on Rust 1.75 and 1.99.1 (conda). Note again: clippy 1.99 flags `assert!(x.is_empty())` in tests (use
+  `assert_eq!`); 1.75 does not, so check on both.
+* **Not verified, by necessity:** Windows and macOS CI for these changes (nothing was pushed); the Windows token file
+  keeps the folder's inherited rights (no explicit ACL); the auto-connect loop inside `serve` (a thread that calls
+  `auto_run` and retries every 30 s when auto connect is off) is not covered by a test, and `serve` itself blocks
+  forever, so it is only run by hand.
+* **Next:** MCP read-only (c) reusing `hopswitch-http` and the token file; then "apply a Rules profile" (§9 step 5),
+  which needs this process. The API has no write endpoints yet, by design.

@@ -19,6 +19,9 @@ hopswitch-core = { path = "../core" }
 hopswitch-storage = { path = "../storage" }
 hopswitch-platform-windows = { path = "../platform-windows" }
 hopswitch-probe = { path = "../probe" }
+hopswitch-http = { path = "../http" }
+getrandom = { version = "0.2", features = ["std"] }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = "=3.10.1"

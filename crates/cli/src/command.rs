@@ -1,5 +1,7 @@
 //! Parsing the command line into a [`Command`].
 
+use std::net::{IpAddr, Ipv4Addr};
+
 use crate::CliError;
 
 /// A parsed command line.
@@ -23,6 +25,37 @@ pub enum Command {
     Proxy(ProxyCommand),
     /// A DNS subcommand.
     Dns(DnsCommand),
+    /// Run the web interface and API on this machine (loopback only).
+    Serve(ServeOptions),
+}
+
+/// The port `serve` listens on unless `--port` says otherwise.
+pub const DEFAULT_SERVE_PORT: u16 = 47831;
+
+/// Why `serve` refuses an address that is not loopback.
+pub(crate) const NOT_LOOPBACK: &str =
+    "serve listens on loopback addresses only (127.0.0.1 or ::1); \
+reach it from another machine with `ssh -L 47831:127.0.0.1:47831 user@server`";
+
+/// `hopswitch serve [--ip IP] [--port N] [--no-auto]`
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ServeOptions {
+    /// The loopback address to listen on.
+    pub ip: IpAddr,
+    /// The port to listen on; `0` picks a free one.
+    pub port: u16,
+    /// Whether the auto-connect loop runs inside the server.
+    pub auto: bool,
+}
+
+impl Default for ServeOptions {
+    fn default() -> Self {
+        Self {
+            ip: IpAddr::V4(Ipv4Addr::LOCALHOST),
+            port: DEFAULT_SERVE_PORT,
+            auto: true,
+        }
+    }
 }
 
 /// Which saved profiles `ping` tests.
@@ -168,10 +201,38 @@ pub fn parse(args: &[String]) -> Result<Command, CliError> {
         "auto" => parse_auto(rest).map(Command::Auto),
         "proxy" => parse_proxy(rest).map(Command::Proxy),
         "dns" => parse_dns(rest).map(Command::Dns),
+        "serve" => parse_serve(rest).map(Command::Serve),
         other => Err(CliError::usage(format!(
             "unknown command `{other}`; try `hopswitch help`"
         ))),
     }
+}
+
+fn parse_serve(args: &[String]) -> Result<ServeOptions, CliError> {
+    let mut options = ServeOptions::default();
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--ip" => {
+                let value = option_value(&mut iter, "--ip")?;
+                options.ip = value
+                    .parse::<IpAddr>()
+                    .map_err(|_| CliError::usage(format!("`{value}` is not an IP address")))?;
+                if !options.ip.is_loopback() {
+                    return Err(CliError::usage(NOT_LOOPBACK));
+                }
+            }
+            "--port" => {
+                let value = option_value(&mut iter, "--port")?;
+                options.port = value.parse::<u16>().map_err(|_| {
+                    CliError::usage(format!("`{value}` is not a port (0 to 65535)"))
+                })?;
+            }
+            "--no-auto" => options.auto = false,
+            other => return Err(CliError::usage(format!("unexpected argument `{other}`"))),
+        }
+    }
+    Ok(options)
 }
 
 fn no_args<T>(rest: &[String], value: T) -> Result<T, CliError> {

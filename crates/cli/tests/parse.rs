@@ -335,3 +335,63 @@ fn the_message_for_a_removed_proxy_option_points_to_the_new_way() {
 
     assert!(message.contains("proxy use"), "{message}");
 }
+
+// ---- serve (ADR-0012 step b) ----
+
+use hopswitch_cli::ServeOptions;
+
+fn serve_options(args: &[&str]) -> ServeOptions {
+    match p(args).unwrap() {
+        Command::Serve(options) => options,
+        other => panic!("not serve: {other:?}"),
+    }
+}
+
+#[test]
+fn serve_defaults_to_loopback_port_47831_with_auto_connect_on() {
+    let options = serve_options(&["serve"]);
+    assert_eq!(options.ip.to_string(), "127.0.0.1");
+    assert_eq!(options.port, 47831);
+    assert!(options.auto);
+}
+
+#[test]
+fn serve_takes_an_ip_a_port_and_can_turn_auto_connect_off() {
+    let options = serve_options(&["serve", "--ip", "::1", "--port", "0", "--no-auto"]);
+    assert_eq!(options.ip.to_string(), "::1");
+    assert_eq!(options.port, 0);
+    assert!(!options.auto);
+    assert_eq!(
+        serve_options(&["serve", "--ip", "127.0.0.2"])
+            .ip
+            .to_string(),
+        "127.0.0.2"
+    );
+}
+
+#[test]
+fn serve_refuses_an_address_that_is_not_loopback_and_points_to_ssh() {
+    for ip in ["0.0.0.0", "192.168.1.10", "::"] {
+        match p(&["serve", "--ip", ip]) {
+            Err(CliError::Usage(message)) => {
+                assert!(message.contains("ssh -L"), "{ip}: {message}");
+            }
+            other => panic!("{ip}: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn serve_has_no_allow_remote_option_and_rejects_bad_values() {
+    for args in [
+        &["serve", "--allow-remote"][..],
+        &["serve", "--ip"],
+        &["serve", "--ip", "not-an-ip"],
+        &["serve", "--port"],
+        &["serve", "--port", "70000"],
+        &["serve", "--port", "abc"],
+        &["serve", "extra"],
+    ] {
+        assert!(is_usage(&p(args)), "{args:?}");
+    }
+}

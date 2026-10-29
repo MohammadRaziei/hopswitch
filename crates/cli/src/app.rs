@@ -23,7 +23,7 @@ use crate::command::{
     parse, AutoCommand, AutoOption, Command, DnsAutoCommand, DnsCommand, PingOptions, PingScope,
     ProxyCommand,
 };
-use crate::CliError;
+use crate::{serve, CliError};
 
 const USAGE: &str = "\
 hopswitch - switch the system proxy and DNS
@@ -44,6 +44,8 @@ usage:
   hopswitch dns remove <name>
   hopswitch ping [proxy|dns] [--url U] [--domain D] [--timeout MS]
                                             test every saved profile and show latency
+  hopswitch serve [--ip 127.0.0.1] [--port 47831] [--no-auto]
+                                            run the web API on this machine (loopback only; use ssh -L)
   hopswitch auto status                     show the auto settings and pools
   hopswitch auto proxy connect on|off       keep the proxy connected to the profile chosen with `proxy use`
   hopswitch auto dns connect|switch on|off  DNS: connect when something answers / stay on the fastest
@@ -57,6 +59,7 @@ usage:
 Run `hopswitch` with no arguments to open the app when this machine has a screen.";
 
 /// Everything the CLI needs from the outside world.
+#[derive(Clone)]
 pub struct Context {
     /// The settings folder (profiles and sessions live here).
     pub dir: PathBuf,
@@ -80,6 +83,7 @@ pub fn run(args: &[String], ctx: &Context, out: &mut dyn Write) -> Result<(), Cl
         Command::Help => say(out, USAGE),
         Command::Version => say(out, version_line()),
         Command::Auto(AutoCommand::Run { once }) => auto_run(ctx, once, out),
+        Command::Serve(options) => serve::serve_forever(ctx, &options, out),
         command => App::open(ctx)?.execute(command, out),
     }
 }
@@ -197,6 +201,9 @@ impl App {
             Command::Auto(command) => self.auto_command(command, out),
             Command::Proxy(command) => self.proxy_command(command, out),
             Command::Dns(command) => self.dns_command(command, out),
+            Command::Serve(_) => Err(CliError::failure(
+                "`serve` runs as its own process and cannot be part of another command",
+            )),
         }
     }
 
@@ -1060,7 +1067,7 @@ fn resolve_dns(profiles: &Profiles, key: &str) -> Result<(DnsProfile, bool), Cli
 
 /// Runs the automatic modes. Services are reopened every round so that a
 /// `hopswitch off` from another terminal is noticed.
-fn auto_run(ctx: &Context, once: bool, out: &mut dyn Write) -> Result<(), CliError> {
+pub(crate) fn auto_run(ctx: &Context, once: bool, out: &mut dyn Write) -> Result<(), CliError> {
     // One round has no memory of earlier ones, so one failure must be enough.
     let mut runner = if once {
         AutoRunner::decisive()
