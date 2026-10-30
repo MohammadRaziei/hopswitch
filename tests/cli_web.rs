@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use hopswitch::cli::{run, start_web, CliError, Context, ServeOptions, WebServer};
-use hopswitch::core::testing::{FakeProber, InMemoryNetwork};
+use hopswitch::core::testing::{FakePacHost, FakeProber, InMemoryNetwork};
 
 struct Env {
     dir: tempfile::TempDir,
@@ -25,6 +25,7 @@ impl Env {
             dir: self.dir.path().join("hopswitch"),
             network: Arc::new(InMemoryNetwork::new()),
             prober: Arc::new(FakeProber::new()),
+            pac: Arc::new(FakePacHost::new()),
         }
     }
 

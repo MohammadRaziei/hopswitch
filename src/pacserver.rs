@@ -17,7 +17,7 @@ use std::io;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::{Arc, PoisonError, RwLock};
 
-use crate::core::{PacConfig, HOPSWITCH_PAC_PATH};
+use crate::core::{PacConfig, PacEndpoint, PacHost, SystemError, HOPSWITCH_PAC_PATH};
 use crate::http::{Request, Response, Server};
 
 pub use crate::http::MAX_CONNECTIONS;
@@ -107,5 +107,30 @@ impl PacServer {
     /// answered finish on their own.
     pub fn stop(self) {
         self.server.stop();
+    }
+}
+
+/// The real [`PacHost`]: every [`PacHost::start`] runs a [`PacServer`] on a free loopback port.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PacServerHost;
+
+impl PacEndpoint for PacServer {
+    fn url(&self) -> PacConfig {
+        PacServer::url(self)
+    }
+
+    fn set_script(&self, script: &str) {
+        PacServer::set_script(self, script);
+    }
+}
+
+impl PacHost for PacServerHost {
+    fn start(&self, script: &str) -> Result<Box<dyn PacEndpoint>, SystemError> {
+        PacServer::start(script)
+            .map(|server| Box::new(server) as Box<dyn PacEndpoint>)
+            .map_err(|error| SystemError::CommandFailed {
+                command: "start the PAC server".to_owned(),
+                details: error.to_string(),
+            })
     }
 }

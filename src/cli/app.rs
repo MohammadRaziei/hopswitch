@@ -14,16 +14,16 @@ use crate::core::{
     dns_preset, dns_presets, fastest_alive, probe_dns_profiles, probe_proxies, proxy_preset,
     proxy_presets, restore_all, stale_hopswitch_pac, AutoConfig, AutoConfigStore, AutoRunner,
     ConnectivitySettings, Decision, DnsConfig, DnsProfile, DnsService, DnsState, Health, Kind,
-    KindReport, NetworkService, Probe, Prober, ProfileRepository, Profiles, ProxyConfig,
+    KindReport, NetworkService, PacHost, Probe, Prober, ProfileRepository, Profiles, ProxyConfig,
     ProxyGroup, ProxyProfile, ProxyService, ProxyState, SessionStore, SystemNetwork, TickReport,
 };
 use crate::storage::{JsonFileAutoStore, JsonFileRepository, JsonFileSessionStore};
 
 use crate::cli::command::{
     parse, AutoCommand, AutoOption, Command, DnsAutoCommand, DnsCommand, PingOptions, PingScope,
-    ProxyCommand,
+    ProxyCommand, RulesCommand,
 };
-use crate::cli::{serve, CliError};
+use crate::cli::{rules, serve, CliError};
 
 const USAGE: &str = "\
 hopswitch - switch the system proxy and DNS
@@ -44,6 +44,11 @@ usage:
   hopswitch dns remove <name>
   hopswitch ping [proxy|dns] [--url U] [--domain D] [--timeout MS]
                                             test every saved profile and show latency
+  hopswitch rules list | show <p>           per-domain routing: list profiles / show one
+  hopswitch rules add <n> [--default direct|<proxy>]   save a profile (unmatched traffic goes to the default)
+  hopswitch rules rule add <p> <domain> direct|<proxy> | rule remove <p> <domain>
+  hopswitch rules default <p> direct|<proxy> | remove <p>
+  hopswitch rules use <p>                   apply it and keep serving it (Enter stops; needs HTTP proxies, no SOCKS)
   hopswitch serve [--ip 127.0.0.1] [--port 47831] [--no-auto]
                                             run the web API on this machine (loopback only; use ssh -L)
   hopswitch auto status                     show the auto settings and pools
@@ -67,6 +72,8 @@ pub struct Context {
     pub network: Arc<dyn SystemNetwork>,
     /// What measures whether a proxy or DNS server answers (`ping`).
     pub prober: Arc<dyn Prober>,
+    /// What serves the PAC script of an applied rules profile (`rules use`).
+    pub pac: Arc<dyn PacHost>,
 }
 
 impl std::fmt::Debug for Context {
@@ -84,6 +91,8 @@ pub fn run(args: &[String], ctx: &Context, out: &mut dyn Write) -> Result<(), Cl
         Command::Version => say(out, version_line()),
         Command::Auto(AutoCommand::Run { once }) => auto_run(ctx, once, out),
         Command::Serve(options) => serve::serve_forever(ctx, &options, out),
+        Command::Rules(RulesCommand::Use(key)) => rules::use_until_enter(ctx, &key, out),
+        Command::Rules(command) => rules::execute(ctx, command, out),
         command => App::open(ctx)?.execute(command, out),
     }
 }
@@ -203,6 +212,9 @@ impl App {
             Command::Dns(command) => self.dns_command(command, out),
             Command::Serve(_) => Err(CliError::failure(
                 "`serve` runs as its own process and cannot be part of another command",
+            )),
+            Command::Rules(_) => Err(CliError::failure(
+                "`rules` commands are handled by `run`, not by an open session",
             )),
         }
     }
@@ -890,7 +902,10 @@ impl App {
 // ---------- helpers ----------
 
 /// Opens one service and resumes the session an earlier run left behind.
-fn open_service<K: Kind>(ctx: &Context, file: &str) -> Result<NetworkService<K>, CliError>
+pub(crate) fn open_service<K: Kind>(
+    ctx: &Context,
+    file: &str,
+) -> Result<NetworkService<K>, CliError>
 where
     JsonFileSessionStore: SessionStore<K::State>,
 {
@@ -914,7 +929,7 @@ fn version_line() -> String {
     format!("hopswitch {}", env!("CARGO_PKG_VERSION"))
 }
 
-fn say(out: &mut dyn Write, text: impl Display) -> Result<(), CliError> {
+pub(crate) fn say(out: &mut dyn Write, text: impl Display) -> Result<(), CliError> {
     writeln!(out, "{text}").map_err(CliError::failure)
 }
 
@@ -944,7 +959,7 @@ fn servers_text(config: &DnsConfig) -> String {
 }
 
 /// `My Work!` becomes `my-work`; Unicode letters and digits (Persian too) are kept.
-fn slug(name: &str) -> String {
+pub(crate) fn slug(name: &str) -> String {
     let mut out = String::new();
     let mut pending_dash = false;
     for ch in name.chars().flat_map(char::to_lowercase) {
@@ -966,7 +981,7 @@ fn slug(name: &str) -> String {
 }
 
 /// `base`, or `base-2`, `base-3`, ... until `taken` says the id is free.
-fn unique_id(base: &str, taken: impl Fn(&str) -> bool) -> String {
+pub(crate) fn unique_id(base: &str, taken: impl Fn(&str) -> bool) -> String {
     if !taken(base) {
         return base.to_owned();
     }
@@ -977,7 +992,7 @@ fn unique_id(base: &str, taken: impl Fn(&str) -> bool) -> String {
 }
 
 /// The id of the saved entry whose id equals `key`, else whose name does (ignoring case).
-fn find_saved<'a>(
+pub(crate) fn find_saved<'a>(
     entries: impl Iterator<Item = (&'a str, &'a str)> + Clone,
     key: &str,
 ) -> Option<String> {

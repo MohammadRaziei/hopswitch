@@ -419,3 +419,121 @@ mod prober_fake {
         }
     }
 }
+
+pub use pac_fake::FakePacHost;
+
+mod pac_fake {
+    use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
+    use crate::core::{PacConfig, PacEndpoint, PacHost, SystemError};
+
+    #[derive(Debug, Default)]
+    struct State {
+        scripts: Vec<String>,
+        running: bool,
+        starts: usize,
+        fault: Option<SystemError>,
+    }
+
+    /// A [`PacHost`] that serves nothing: it remembers every script it was given and whether its
+    /// endpoint is still alive. Clones share their state, so a test keeps one and hands another out.
+    #[derive(Debug, Clone)]
+    pub struct FakePacHost {
+        port: u16,
+        state: Arc<Mutex<State>>,
+    }
+
+    impl Default for FakePacHost {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl FakePacHost {
+        /// A host whose endpoints report port 47000.
+        pub fn new() -> Self {
+            Self::with_port(47000)
+        }
+
+        /// A host whose endpoints report `port`.
+        pub fn with_port(port: u16) -> Self {
+            Self {
+                port,
+                state: Arc::default(),
+            }
+        }
+
+        /// Makes the next [`PacHost::start`] fail with `error`.
+        pub fn fail_next_start(&self, error: SystemError) {
+            self.lock().fault = Some(error);
+        }
+
+        /// The script served now (the last one given), if a server was started.
+        pub fn script(&self) -> Option<String> {
+            self.lock().scripts.last().cloned()
+        }
+
+        /// How many scripts were given in total (the first at start, later ones by `set_script`).
+        pub fn script_count(&self) -> usize {
+            self.lock().scripts.len()
+        }
+
+        /// Whether a started endpoint has not been dropped yet.
+        pub fn is_running(&self) -> bool {
+            self.lock().running
+        }
+
+        /// How many servers were started successfully.
+        pub fn starts(&self) -> usize {
+            self.lock().starts
+        }
+
+        fn lock(&self) -> MutexGuard<'_, State> {
+            self.state.lock().unwrap_or_else(PoisonError::into_inner)
+        }
+    }
+
+    impl PacHost for FakePacHost {
+        fn start(&self, script: &str) -> Result<Box<dyn PacEndpoint>, SystemError> {
+            let mut state = self.lock();
+            if let Some(error) = state.fault.take() {
+                return Err(error);
+            }
+            state.scripts.push(script.to_owned());
+            state.running = true;
+            state.starts += 1;
+            Ok(Box::new(FakeEndpoint {
+                port: self.port,
+                state: Arc::clone(&self.state),
+            }))
+        }
+    }
+
+    struct FakeEndpoint {
+        port: u16,
+        state: Arc<Mutex<State>>,
+    }
+
+    impl PacEndpoint for FakeEndpoint {
+        fn url(&self) -> PacConfig {
+            PacConfig::loopback(self.port)
+        }
+
+        fn set_script(&self, script: &str) {
+            self.state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .scripts
+                .push(script.to_owned());
+        }
+    }
+
+    impl Drop for FakeEndpoint {
+        fn drop(&mut self) {
+            self.state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .running = false;
+        }
+    }
+}

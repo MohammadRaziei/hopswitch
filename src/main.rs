@@ -9,6 +9,7 @@ use hopswitch::cli::{
     UnsupportedNetwork,
 };
 use hopswitch::core::SystemNetwork;
+use hopswitch::pacserver::PacServerHost;
 use hopswitch::platform_windows::WindowsNetwork;
 use hopswitch::probe::NetProber;
 
@@ -63,6 +64,7 @@ fn main() -> ExitCode {
             dir,
             network,
             prober: Arc::new(NetProber::new()),
+            pac: Arc::new(PacServerHost),
         },
         &mut std::io::stdout().lock(),
     ) {

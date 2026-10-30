@@ -27,6 +27,51 @@ pub enum Command {
     Dns(DnsCommand),
     /// Run the web interface and API on this machine (loopback only).
     Serve(ServeOptions),
+    /// A rules-profile subcommand (per-domain routing).
+    Rules(RulesCommand),
+}
+
+/// `hopswitch rules ...`
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RulesCommand {
+    /// List the saved rules profiles.
+    List,
+    /// Show one profile's rules.
+    Show(String),
+    /// Save a new, empty profile.
+    Add {
+        /// Display name (the id is derived from it).
+        name: String,
+        /// Where traffic goes when no rule matches: `direct` or a saved proxy or group.
+        default: Option<String>,
+    },
+    /// Delete a profile.
+    Remove(String),
+    /// Change where unmatched traffic goes.
+    SetDefault {
+        /// The profile (id or name).
+        profile: String,
+        /// `direct` or a saved proxy or group.
+        target: String,
+    },
+    /// Append a rule: a domain and where it goes.
+    AddRule {
+        /// The profile (id or name).
+        profile: String,
+        /// The domain; it matches itself and every sub-domain.
+        domain: String,
+        /// `direct` or a saved proxy or group.
+        target: String,
+    },
+    /// Delete the rule for a domain.
+    RemoveRule {
+        /// The profile (id or name).
+        profile: String,
+        /// The domain.
+        domain: String,
+    },
+    /// Apply a profile and keep serving its PAC script until stopped.
+    Use(String),
 }
 
 /// The port `serve` listens on unless `--port` says otherwise.
@@ -202,10 +247,69 @@ pub fn parse(args: &[String]) -> Result<Command, CliError> {
         "proxy" => parse_proxy(rest).map(Command::Proxy),
         "dns" => parse_dns(rest).map(Command::Dns),
         "serve" => parse_serve(rest).map(Command::Serve),
+        "rules" => parse_rules(rest).map(Command::Rules),
         other => Err(CliError::usage(format!(
             "unknown command `{other}`; try `hopswitch help`"
         ))),
     }
+}
+
+const RULES_USAGE: &str =
+    "expected: rules list | show <p> | add <name> [--default T] | remove <p> | \
+default <p> <T> | rule add <p> <domain> <T> | rule remove <p> <domain> | use <p>";
+
+fn parse_rules(rest: &[String]) -> Result<RulesCommand, CliError> {
+    let Some((sub, args)) = rest.split_first() else {
+        return Err(CliError::usage(RULES_USAGE));
+    };
+    match (sub.as_str(), args) {
+        ("list", _) => no_args(args, RulesCommand::List),
+        ("show", _) => one_arg(args, "profile name").map(RulesCommand::Show),
+        ("use", _) => one_arg(args, "profile name").map(RulesCommand::Use),
+        ("remove", _) => one_arg(args, "profile name").map(RulesCommand::Remove),
+        ("add", _) => parse_rules_add(args),
+        ("default", [profile, target]) => Ok(RulesCommand::SetDefault {
+            profile: profile.clone(),
+            target: target.clone(),
+        }),
+        ("rule", [action, tail @ ..]) => match (action.as_str(), tail) {
+            ("add", [profile, domain, target]) => Ok(RulesCommand::AddRule {
+                profile: profile.clone(),
+                domain: domain.clone(),
+                target: target.clone(),
+            }),
+            ("remove", [profile, domain]) => Ok(RulesCommand::RemoveRule {
+                profile: profile.clone(),
+                domain: domain.clone(),
+            }),
+            _ => Err(CliError::usage(
+                "usage: hopswitch rules rule add <profile> <domain> <target> | rule remove <profile> <domain>",
+            )),
+        },
+        ("default" | "rule", _) => Err(CliError::usage(RULES_USAGE)),
+        (other, _) => Err(CliError::usage(format!("unknown rules command `{other}`"))),
+    }
+}
+
+fn parse_rules_add(args: &[String]) -> Result<RulesCommand, CliError> {
+    let mut name = None;
+    let mut default = None;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if arg == "--default" {
+            default = Some(option_value(&mut iter, "--default")?);
+        } else if arg.starts_with("--") {
+            return Err(CliError::usage(format!("unknown option `{arg}`")));
+        } else if name.is_none() {
+            name = Some(arg.clone());
+        } else {
+            return Err(CliError::usage(format!("unexpected argument `{arg}`")));
+        }
+    }
+    let name = name.ok_or_else(|| {
+        CliError::usage("usage: hopswitch rules add <name> [--default direct|<proxy>]")
+    })?;
+    Ok(RulesCommand::Add { name, default })
 }
 
 fn parse_serve(args: &[String]) -> Result<ServeOptions, CliError> {

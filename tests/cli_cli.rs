@@ -5,7 +5,7 @@ use std::fs;
 use std::sync::Arc;
 
 use hopswitch::cli::{run, CliError, Context, UnsupportedNetwork};
-use hopswitch::core::testing::{FakeProber, InMemoryNetwork};
+use hopswitch::core::testing::{FakePacHost, FakeProber, InMemoryNetwork};
 use hopswitch::core::{
     DnsState, Health, PacConfig, ProxyConfig, ProxyScheme, ProxyState, SystemError, SystemNetwork,
 };
@@ -38,6 +38,7 @@ impl Env {
             dir: self.dir.path().join("hopswitch"),
             network: self.net.clone(),
             prober: self.prober.clone(),
+            pac: Arc::new(FakePacHost::new()),
         }
     }
 
@@ -421,6 +422,7 @@ fn a_system_without_an_adapter_explains_itself() {
         dir: dir.path().to_path_buf(),
         network: Arc::new(UnsupportedNetwork),
         prober: Arc::new(FakeProber::new()),
+        pac: Arc::new(FakePacHost::new()),
     };
     let mut out = Vec::new();
 

@@ -21,7 +21,7 @@ Early development; see [`CHECKLIST.md`](CHECKLIST.md) for the full plan and [`HA
 | Windows proxy adapter | done, verified on a real runner by CI (`windows-proxy-smoke`) |
 | Command line (`hopswitch`) | done |
 | Connectivity test (`hopswitch ping`), auto connect, proxy groups ("fastest of ...") | done |
-| Domain rules (per-domain profiles, PAC) | planned (ADR-0010 phase 2) |
+| Domain rules (per-domain profiles, PAC) | `hopswitch rules ...` (HTTP proxies only, Windows adapter; rule lists next) |
 | Per-app profiles | undecided: needs a local router (ADR-0010) |
 | Windows DNS adapter (needs administrator rights) | planned |
 | macOS and Linux adapters | planned |

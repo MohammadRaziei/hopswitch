@@ -323,3 +323,61 @@ fn debug_output_does_not_dump_the_script() {
     assert!(text.len() < 300, "{} bytes: {text}", text.len());
     assert!(text.contains("PacServer"));
 }
+
+// ---------- as the host that `rules use` starts ----------
+
+mod as_host {
+    use hopswitch::core::PacHost;
+    use hopswitch::pacserver::PacServerHost;
+
+    use super::*;
+
+    fn fetch(url: &str) -> Reply {
+        let rest = url.strip_prefix("http://").unwrap();
+        let (authority, path) = rest.split_once('/').unwrap();
+        let addr: SocketAddr = authority.parse().unwrap();
+        let mut stream = connect(addr);
+        let request =
+            format!("GET /{path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\n\r\n");
+        stream.write_all(request.as_bytes()).unwrap();
+        read_reply(stream)
+    }
+
+    #[test]
+    fn starting_serves_the_script_at_the_returned_address() {
+        let endpoint = PacServerHost.start(SCRIPT).unwrap();
+
+        let reply = fetch(endpoint.url().url());
+
+        assert_eq!(reply.status(), "HTTP/1.1 200 OK");
+        assert_eq!(reply.body, SCRIPT.as_bytes());
+        assert!(endpoint.url().hopswitch_port().is_some());
+    }
+
+    #[test]
+    fn replacing_the_script_keeps_the_address() {
+        let endpoint = PacServerHost.start(SCRIPT).unwrap();
+        let url = endpoint.url();
+
+        endpoint.set_script("function FindProxyForURL(u, h) { return \"PROXY a:1\"; }\n");
+
+        assert_eq!(endpoint.url(), url);
+        let body = String::from_utf8(fetch(url.url()).body).unwrap();
+        assert!(body.contains("PROXY a:1"), "{body}");
+    }
+
+    #[test]
+    fn dropping_the_endpoint_stops_listening() {
+        let endpoint = PacServerHost.start(SCRIPT).unwrap();
+        let port = endpoint.url().hopswitch_port().unwrap();
+
+        drop(endpoint);
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let addr = SocketAddr::from(([127, 0, 0, 1], port));
+        while TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() {
+            assert!(Instant::now() < deadline, "still listening after drop");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+}

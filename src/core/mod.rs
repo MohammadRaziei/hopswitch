@@ -15,6 +15,7 @@ mod error;
 mod group;
 mod network;
 mod pac;
+mod pac_host;
 mod pac_script;
 mod presets;
 mod prober;
@@ -24,6 +25,7 @@ mod proxy;
 mod repository;
 mod rule_list;
 mod rules;
+mod rules_apply;
 mod service;
 mod session;
 
@@ -36,6 +38,7 @@ pub use error::ValidationError;
 pub use group::{GroupPolicy, ProxyGroup};
 pub use network::{CommandOutput, CommandRunner, DnsState, ProxyState, SystemError, SystemNetwork};
 pub use pac::{PacConfig, HOPSWITCH_PAC_PATH};
+pub use pac_host::{PacEndpoint, PacHost};
 pub use pac_script::{PacError, PacPlan, PacRoute, PAC_MAX_BYTES, PAC_TARGET_BYTES};
 pub use presets::{
     dns_preset, dns_presets, proxy_preset, proxy_presets, DnsPreset, DnsPresetGroup, ProxyPreset,
@@ -47,6 +50,7 @@ pub use proxy::{ProxyConfig, ProxyScheme};
 pub use repository::{ProfileRepository, RepositoryError};
 pub use rule_list::{ImportReport, ListFormat, RuleList, RuleListError};
 pub use rules::{Rule, RulesProfile, Target};
+pub use rules_apply::{plan_rules_pac, RulesApplyError};
 pub use service::{
     restore_all, DnsKind, DnsService, Kind, NetworkService, ProxyKind, ProxyService,
     RestoreAllError, ServiceError,

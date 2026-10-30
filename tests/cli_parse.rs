@@ -395,3 +395,103 @@ fn serve_has_no_allow_remote_option_and_rejects_bad_values() {
         assert!(is_usage(&p(args)), "{args:?}");
     }
 }
+
+// ---------- rules ----------
+
+mod rules {
+    use hopswitch::cli::RulesCommand;
+
+    use super::*;
+
+    fn rules(args: &[&str]) -> Result<Command, CliError> {
+        let mut all = vec!["rules"];
+        all.extend_from_slice(args);
+        p(&all)
+    }
+
+    #[test]
+    fn the_profile_commands() {
+        assert_eq!(
+            rules(&["list"]).unwrap(),
+            Command::Rules(RulesCommand::List)
+        );
+        assert_eq!(
+            rules(&["show", "work"]).unwrap(),
+            Command::Rules(RulesCommand::Show("work".into()))
+        );
+        assert_eq!(
+            rules(&["use", "work"]).unwrap(),
+            Command::Rules(RulesCommand::Use("work".into()))
+        );
+        assert_eq!(
+            rules(&["remove", "work"]).unwrap(),
+            Command::Rules(RulesCommand::Remove("work".into()))
+        );
+    }
+
+    #[test]
+    fn add_takes_a_name_and_an_optional_default() {
+        assert_eq!(
+            rules(&["add", "Work"]).unwrap(),
+            Command::Rules(RulesCommand::Add {
+                name: "Work".into(),
+                default: None
+            })
+        );
+        assert_eq!(
+            rules(&["add", "Work", "--default", "corp"]).unwrap(),
+            Command::Rules(RulesCommand::Add {
+                name: "Work".into(),
+                default: Some("corp".into())
+            })
+        );
+        assert!(is_usage(&rules(&["add"])));
+        assert!(is_usage(&rules(&["add", "Work", "--default"])));
+        assert!(is_usage(&rules(&["add", "Work", "--bogus", "x"])));
+    }
+
+    #[test]
+    fn the_default_and_the_rules_inside_a_profile() {
+        assert_eq!(
+            rules(&["default", "work", "direct"]).unwrap(),
+            Command::Rules(RulesCommand::SetDefault {
+                profile: "work".into(),
+                target: "direct".into()
+            })
+        );
+        assert_eq!(
+            rules(&["rule", "add", "work", "example.com", "corp"]).unwrap(),
+            Command::Rules(RulesCommand::AddRule {
+                profile: "work".into(),
+                domain: "example.com".into(),
+                target: "corp".into()
+            })
+        );
+        assert_eq!(
+            rules(&["rule", "remove", "work", "example.com"]).unwrap(),
+            Command::Rules(RulesCommand::RemoveRule {
+                profile: "work".into(),
+                domain: "example.com".into()
+            })
+        );
+    }
+
+    #[test]
+    fn missing_or_extra_words_are_usage_errors() {
+        for args in [
+            &[][..],
+            &["frobnicate"],
+            &["show"],
+            &["use"],
+            &["use", "a", "b"],
+            &["list", "extra"],
+            &["default", "work"],
+            &["rule"],
+            &["rule", "add", "work", "example.com"],
+            &["rule", "remove", "work"],
+            &["rule", "move", "work", "a", "b"],
+        ] {
+            assert!(is_usage(&rules(args)), "{args:?}");
+        }
+    }
+}
