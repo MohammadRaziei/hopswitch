@@ -6,6 +6,10 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 repository.workspace = true
 
 [lints]
@@ -16,11 +20,11 @@ name = "hopswitch"
 path = "src/main.rs"
 
 [dependencies]
-hopswitch-core = { path = "../core" }
-hopswitch-storage = { path = "../storage" }
-hopswitch-platform-windows = { path = "../platform-windows" }
-hopswitch-probe = { path = "../probe" }
-hopswitch-http = { path = "../http" }
+hopswitch-core = { workspace = true }
+hopswitch-storage = { workspace = true }
+hopswitch-platform-windows = { workspace = true }
+hopswitch-probe = { workspace = true }
+hopswitch-http = { workspace = true }
 getrandom = { version = "0.2", features = ["std"] }
 serde_json = { workspace = true }
 

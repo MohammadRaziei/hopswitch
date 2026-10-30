@@ -6,12 +6,17 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
 
 [lints]
 workspace = true
 
 [dependencies]
-hopswitch-core = { path = "../core" }
+hopswitch-core = { workspace = true }
 serde.workspace = true
 serde_json.workspace = true
 

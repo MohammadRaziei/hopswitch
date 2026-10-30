@@ -11,8 +11,19 @@ rust-version = "1.75"
 license = "MIT"
 authors = ["Hopswitch contributors"]
 repository = "https://github.com/MohammadRaziei/hopswitch"
+homepage = "https://github.com/MohammadRaziei/hopswitch"
+readme = "README.md"
+keywords = ["proxy", "dns", "pac", "cli", "network"]
+categories = ["command-line-utilities", "network-programming"]
 
 [workspace.dependencies]
+# The crates of this workspace. `version` is what crates.io needs; `path` is what the build uses.
+hopswitch-core = { path = "crates/core", version = "0.1.0" }
+hopswitch-storage = { path = "crates/storage", version = "0.1.0" }
+hopswitch-http = { path = "crates/http", version = "0.1.0" }
+hopswitch-probe = { path = "crates/probe", version = "0.1.0" }
+hopswitch-platform-windows = { path = "crates/platform-windows", version = "0.1.0" }
+hopswitch-pacserver = { path = "crates/pacserver", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"

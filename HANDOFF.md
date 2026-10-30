@@ -521,3 +521,16 @@ override it) or a bug in these two scripts.
   control file (dpkg accepted it); if a tool complains, drop `depends = ""` and check what cargo-deb writes for a static binary.
 * **Not done:** signing (Windows Authenticode, macOS notarization: an unsigned download from a browser shows a warning), Linux aarch64, an install script
   (the stable URLs `releases/download/__beta__/<file>` and `releases/latest/download/<file>` are meant for it), an updater, a README "Install" section.
+
+## 07zl: crates.io preparation (the user decided to publish now: nobody installs it soon, so API churn is cheap)
+
+* Done: the internal crates are declared once in the root `[workspace.dependencies]` with `path` **and** `version = "0.1.0"` (crates.io needs the version; the
+  crates use `workspace = true`), and `homepage`, `readme`, `keywords`, `categories` are inherited from `[workspace.package]`. **When the version changes,
+  change it in `[workspace.package]` and in the six internal lines of `[workspace.dependencies]`.**
+* Checked: `cargo publish --workspace --dry-run` with Rust 1.99.1 packs, rebuilds from the packed copies and verifies all 7 crates (core, http, storage,
+  platform-windows, probe, pacserver, cli; `hopswitch` is only the binary name) in dependency order; 545 tests, fmt, clippy still green on 1.75; `Cargo.lock` unchanged.
+  All 7 names were free on crates.io on 2026-10-29. **Nothing was uploaded** (needs the user's crates.io token).
+* To publish (by the user): `cargo login` (token from crates.io/settings/tokens, verified email needed), then `cargo publish --workspace` (cargo >= 1.90) from the
+  repo root. A published version cannot be deleted, only yanked. Users then run `cargo install hopswitch-cli` (the program is called `hopswitch`).
+* Deliberately **not** done: `#[non_exhaustive]` on public enums (versions are 0.x, a breaking change is a 0.2.0); publishing from CI (would need a
+  `CARGO_REGISTRY_TOKEN` secret; liburlparser publishes to PyPI on tags, the same idea applies if wanted).
