@@ -1,15 +1,15 @@
 # CI report
 
-- commit: `00615eaa5859f73d8e6021636289e5ccf175332f` on `master` - fix CI musl static binary check using readelf instead of ldd
-- event: push, run: https://github.com/MohammadRaziei/hopswitch/actions/runs/40975814538
+- commit: `71213b88b27bae270a41f97b189311621eb4bbdd` on `master` - chore: prepare project structure and crates for publishing on crates.io
+- event: push, run: https://github.com/MohammadRaziei/hopswitch/actions/runs/41011844014
 - result: **all green** (6 of 6 jobs ok)
-- written: 2026-10-29 23:52:09 UTC
+- written: 2026-10-30 06:04:55 UTC
 
 | job | result |
 | --- | --- |
-| Windows proxy adapter (real registry) | success |
 | fmt + clippy | success |
-| test (macos-latest) | success |
-| test (ubuntu-latest) | success |
+| Windows proxy adapter (real registry) | success |
 | test (windows-latest) | success |
+| test (ubuntu-latest) | success |
 | test (Rust 1.75, the declared minimum) | success |
+| test (macos-latest) | success |
