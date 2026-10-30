@@ -10,17 +10,17 @@
 └───────────────┬──────────────────────────────────────────┘
                 ▼
 ┌──────────────────────────┐     ┌─────────────────────────┐
-│ crates/core              │◀────│ crates/platform-*       │
+│ src/core                 │◀────│ src/platform_*          │
 │  Profile / ProxyConfig / │     │  implement SystemNetwork│
 │  DnsConfig, services,    │     │  for Windows/macOS/Linux│
 │  traits (ports)          │     └─────────────────────────┘
 └──────────────────────────┘
 ```
 
-* **core** is a hexagonal "domain + ports" crate. It never touches the OS.
+* **core** is a hexagonal "domain + ports" module. It never touches the OS. The layering of all modules is checked by `tests/architecture.rs` (ADR-0013).
 * **storage** implements the persistence ports (profiles, sessions) with atomic, versioned JSON files (ADR-0007).
-* **platform-\*** crates are adapters; each is small and integration-tested on its own OS in CI.
-  The Windows adapter (`platform-windows`) is split into pure registry logic and a thin process runner (ADR-0008).
+* **platform_\*** modules are adapters; each is small and integration-tested on its own OS in CI.
+  The Windows adapter (`platform_windows`) is split into pure registry logic and a thin process runner (ADR-0008).
 * **src-tauri** is a thin composition root: wires adapters into services and exposes commands.
 
 ## Key flows

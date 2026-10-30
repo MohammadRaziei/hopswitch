@@ -1,6 +1,6 @@
 # ADR-0008: OS adapters talk to the system through a `CommandRunner` port
 
-* **Status:** accepted
+* **Status:** accepted; `platform-*` crates are now modules `src/platform_*`, see ADR-0013
 * **Decisions:**
   1. **Adapters are testable anywhere.** `core` defines `CommandRunner` (+ `testing::FakeRunner`).
      Each `platform-*` crate keeps its logic pure (parse / plan / render) and only the tiny

@@ -48,68 +48,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "hopswitch-cli"
+name = "hopswitch"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "getrandom",
- "hopswitch-core",
- "hopswitch-http",
- "hopswitch-platform-windows",
- "hopswitch-probe",
- "hopswitch-storage",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "hopswitch-core"
-version = "0.1.0"
-dependencies = [
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
-]
-
-[[package]]
-name = "hopswitch-http"
-version = "0.1.0"
-
-[[package]]
-name = "hopswitch-pacserver"
-version = "0.1.0"
-dependencies = [
- "hopswitch-core",
- "hopswitch-http",
-]
-
-[[package]]
-name = "hopswitch-platform-windows"
-version = "0.1.0"
-dependencies = [
- "base64",
- "hopswitch-core",
- "hopswitch-storage",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "hopswitch-probe"
-version = "0.1.0"
-dependencies = [
- "hopswitch-core",
-]
-
-[[package]]
-name = "hopswitch-storage"
-version = "0.1.0"
-dependencies = [
- "hopswitch-core",
- "serde",
- "serde_json",
- "tempfile",
 ]
 
 [[package]]

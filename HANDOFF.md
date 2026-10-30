@@ -1,4 +1,4 @@
-# HANDOFF — Hopswitch (state at 2026-10-29, step 07ze, 545 tests green; see the git log for HEAD)
+# HANDOFF — Hopswitch (state at 2026-10-30, step 07zn, 549 tests green; see the git log for HEAD)
 
 > **Paste-in starter for the new chat** (the user writes Persian, informal; attach the project zip,
 > this file; **do not ask him to paste CI results, read them yourself, see §8**):
@@ -10,6 +10,14 @@
 > Reply in Persian (casual, friendly). Code, comments, commit messages and docs stay in English.
 
 ---
+
+> **READ FIRST (07zn): the Cargo workspace was merged into ONE package `hopswitch`** (ADR-0013, the user's decision: only one name goes to crates.io).
+> Older sections of this file say "crate"/"crates/..."; they were rewritten to the new paths where that was mechanical, but the **names** of the former
+> crates remain in prose. Map: `hopswitch-core` = module `src/core`; `-storage` = `src/storage`; `-http` = `src/http.rs`; `-probe` = `src/probe`;
+> `-platform-windows` = `src/platform_windows`; `-pacserver` = `src/pacserver.rs`; `-cli` = `src/cli` (+ `src/main.rs`, the composition root). Tests: `tests/<module>_<name>.rs`;
+> examples: `examples/`. No `-p ...` flags any more: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo build --release`, `cargo publish`.
+> The layering is enforced by `tests/architecture.rs` (a table of who may use whom; core may not touch the OS). Add a module there when you add one.
+> The React frontend must go to `ui/`, not `src/`.
 
 ## 0. Where we stopped (read this first)
 
@@ -85,24 +93,25 @@
 ```
 hopswitch/
 ├── AGENT.md  CHECKLIST.md  README.md  HANDOFF.md      # rules, roadmap, public README, this file
-├── Cargo.toml        # workspace; rust-version = "1.75"; lints: unsafe_code=forbid, missing_docs=warn, clippy pedantic
+├── Cargo.toml        # ONE package `hopswitch` (lib + bin, ADR-0013); rust-version = "1.75"; lints: unsafe_code=forbid, missing_docs=warn, clippy pedantic
 ├── rustfmt.toml      # max_width = 100
-├── crates/
-│   ├── core/             # hopswitch-core: pure Rust domain + services + ports (166 tests)
-│   │   └── src/ auto_config auto_runner autopilot connectivity dns error group managed_block network
-│   │            presets prober profile profiles proxy repository service session testing
-│   ├── storage/          # hopswitch-storage: write_atomic, JsonFileRepository, JsonFileSessionStore, JsonFileAutoStore (40)
-│   ├── platform-windows/ # hopswitch-platform-windows: WindowsNetwork (proxy via registry + WinINet), ProcessRunner;
-│   │                     #   `pub mod registry` = pure parse/plan/render (36 tests + examples/proxy_smoke.rs)
-│   ├── probe/            # hopswitch-probe: NetProber, std only: DNS A query over UDP, HTTP through HTTP/SOCKS4a/SOCKS5 (22)
-│   └── cli/              # hopswitch-cli, binary `hopswitch`: command.rs (parser) + app.rs (behaviour) (90)
+├── src/
+│   ├── lib.rs  main.rs   # main.rs = composition root (gives the CLI WindowsNetwork and NetProber)
+│   ├── core/             # pure Rust domain + services + ports (was hopswitch-core)
+│   ├── storage/          # write_atomic, JsonFileRepository, JsonFileSessionStore, JsonFileAutoStore
+│   ├── platform_windows/ # WindowsNetwork (proxy via registry + WinINet), ProcessRunner; `pub mod registry` = pure parse/plan/render
+│   ├── probe/            # NetProber, std only: DNS A query over UDP, HTTP through HTTP/SOCKS4a/SOCKS5
+│   ├── http.rs           # shared loopback HTTP server (std only); pacserver.rs is a handler on it
+│   └── cli/              # command.rs (parser) + app.rs (behaviour) + serve.rs (web API); binary `hopswitch`
+├── tests/                # tests/<module>_<name>.rs and architecture.rs (who may use whom)
+├── examples/             # gen_pac.rs, proxy_smoke.rs
 ├── tools/pac-bench/      # spike for ADR-0011: make_pac.py, verify_local.py, bench.ps1, README.md
 ├── design/               # README, preview/*.dc.html (UI mockups, canvas.json), logo/ (SVG sources + build.py + export/)
 ├── docs/                 # ARCHITECTURE.md, adr/0001 … 0011
 └── .github/workflows/    # ci.yml (lint, test x3 OS, msrv, windows-proxy-smoke), pac-bench.yml (manual)
 ```
 
-Tests live in `crates/*/tests/` (public API). The per-crate counts above were written at 354 tests; the total is now 444 (rule list +23, PAC state +21, rules profiles +35, PAC generator +13).
+Tests live in `tests/<module>_<name>.rs` (public API). The per-crate counts above were written at 354 tests; the total is now 444 (rule list +23, PAC state +21, rules profiles +35, PAC generator +13).
 
 ## 4. Domain model and the invariants that matter
 
@@ -169,7 +178,7 @@ hopswitch off
 
 `proxy use` also selects the profile for auto connect. A group with no live member changes nothing.
 `auto run` reopens the services every round and prints a persistent problem only once.
-(The help text is generated in `crates/cli/src/app.rs`, `USAGE`.)
+(The help text is generated in `src/cli/app.rs`, `USAGE`.)
 
 ## 6. Decisions (ADRs) and unwritten rules
 
@@ -188,7 +197,7 @@ hopswitch off
 | 0011 | Domain rules and public rule lists; compact PAC; **proposed**, waits for the Windows measurement |
 
 Also in force: no `unwrap/expect/panic` outside tests; `missing_docs` is a warning (and CI uses `-D warnings`),
-so every public item needs docs; clippy pedantic is on; tests in `crates/*/tests/`; one checklist step ≈ one
+so every public item needs docs; clippy pedantic is on; tests in `tests/<module>_<name>.rs`; one checklist step ≈ one
 commit; the UI will use `design-system/MASTER.md` (Step 8, ui-ux-pro-max) and the checklist in AGENT.md.
 
 ## 7. CI and the toolchain
@@ -285,7 +294,7 @@ override it) or a bug in these two scripts.
       bucket format, ES3 only, plain host names `DIRECT`, lowercase, `hasOwnProperty` guard. Must pass the same
       exhaustive reference test (every listed domain, a subdomain of each, near-misses, look-alikes) run with Node in CI.
       Budget: hard 1 000 000 bytes, target 750 000.
-   5. **Local PAC server** — **server DONE (07w)**: `crates/pacserver`, `PacServer::start(script)`, `.url()` (a
+   5. **Local PAC server** — **server DONE (07w)**: `src/pacserver.rs`, `PacServer::start(script)`, `.url()` (a
       `PacConfig`), `.set_script()`, `.stop()`/drop; loopback only, free port, std only; refuses a wrong `Host` header
       (DNS rebinding, 403), one thread per connection capped at 32, `431` over 8 KiB of headers, `no-store`, GET/HEAD
       only. 22 tests over real sockets (stressed 30x, three deliberate breakages: two caught; the drain-after-reply
@@ -349,15 +358,15 @@ override it) or a bug in these two scripts.
   `fod` 10 728 B -> ok, 0 wrong, 22.3 ms, 280.5 us; `object-full` 2 276 542 B and `object-ir` 1 074 053 B ->
   both FAILED in `Resolve` with 0x2f87 (`ERROR_WINHTTP_BAD_AUTO_PROXY_SCRIPT`, 12167). The compact bucket
   format is therefore mandatory. The generator in Rust must reproduce `make_pac.py`'s `bucket-ir` output.
-* **PAC generator (step 07r) results:** `crates/core/src/pac_script.rs`. Iran list with the `.ir` rule: 649 575 bytes
+* **PAC generator (step 07r) results:** `src/core/pac_script.rs`. Iran list with the `.ir` rule: 649 575 bytes
   (the spike's `bucket-ir`: 649 448), 30 ms to generate, 0 wrong on 327 790 lookups in Node; `fod` 9 778 bytes.
-  Tests (`crates/core/tests/pac_script.rs`) run the script in Node and compare with the product's own matching
+  Tests (`tests/core_pac_script.rs`) run the script in Node and compare with the product's own matching
   (`RuleList::matches`, rule order) on ~64 000 hosts, including look-alikes, upper case, trailing dots and
   host names such as `constructor.com`; breaking the generator on purpose is caught (two mutations tried; the
   `hasOwnProperty` guard has no observable effect and is purely defensive). **Node is required in CI**
   (`HOPSWITCH_REQUIRE_NODE=1` in `ci.yml`); locally the Node tests skip with a message when Node is missing.
   **Verified on real WinHTTP (2026-10-26 run):** `rust-bucket-ir` and `rust-fod` pass (0 wrong of 535; first
-  lookup 40.7 ms / 27.1 ms). The workflow builds them with `cargo run -p hopswitch-core --example gen_pac`.
+  lookup 40.7 ms / 27.1 ms). The workflow builds them with `cargo run --example gen_pac`.
   **FINDING that needs a product decision:** the keyword probe shows WinHTTP returns *no proxy* for `SOCKS`,
   `SOCKS4` and `SOCKS5` in a PAC (type 1, empty string), while `PROXY` and `HTTPS` work. An app that asks WinHTTP
   for its proxy would go **direct** (a leak, silently) when a rule says `SOCKS5`. Browsers (own PAC engine) are
@@ -451,13 +460,13 @@ override it) or a bug in these two scripts.
 
 ## 07za-07ze: `hopswitch serve` (ADR-0012 step b)
 
-* **`crates/http` (`hopswitch-http`, std only, 19 tests):** the HTTP plumbing shared by every local server.
+* **`src/http.rs` (`hopswitch-http`, std only, 19 tests):** the HTTP plumbing shared by every local server.
   `Server::start(addr, name, handler)` refuses anything but a loopback address (`InvalidInput`), checks `Host` (own
   address or `localhost:<port>`; 403 otherwise; a missing `Host` is served), answers 400 for malformed requests and
   431 above 8 KiB of headers, one thread per connection (cap 32; the slot is returned by a `Drop` guard, and a
   panicking handler gets a 500), drops header values with a line break, and ignores a handler's `Content-Length` /
   `Connection`. `hopswitch-pacserver` is now only a handler on it (its 22 tests were not changed).
-* **`hopswitch serve [--ip <loopback>] [--port N] [--no-auto]`** (`crates/cli/src/serve.rs`, 22 new tests over real
+* **`hopswitch serve [--ip <loopback>] [--port N] [--no-auto]`** (`src/cli/serve.rs`, 22 new tests over real
   sockets). Default `127.0.0.1:47831`; `--port 0` picks a free port. A non-loopback `--ip` is a usage error that
   points to `ssh -L`; there is **no** `--allow-remote` and **no** TLS (decided with the user, ADR-0012).
   Token: 256 random bits from the OS (`getrandom`), file `web-token` in the settings folder, mode 0600 on Unix
@@ -491,11 +500,11 @@ override it) or a bug in these two scripts.
 * **Files:** `.github/workflows/release.yml` (orchestrator: `init` decides release name and checks that the tag equals `v<Cargo version>`; `package`
   calls the reusable workflow; `publish` writes `SHA256SUMS`, the release text from `.github/release_template.md`, moves the tag, creates/updates the
   release, replaces the files; only for a tag or `master`; `concurrency` queues runs instead of cancelling them), `.github/workflows/package.yml`
-  (reusable: `workflow_call`, also `workflow_dispatch`, and a pull request that touches `Cargo.toml`, `Cargo.lock`, `crates/cli/Cargo.toml`, `LICENSE` or
+  (reusable: `workflow_call`, also `workflow_dispatch`, and a pull request that touches `Cargo.toml`, `Cargo.lock`, `src/cli/Cargo.toml`, `LICENSE` or
   itself), `.github/release_template.md` (placeholders `RELEASE_NAME`, `VERSION_STRING`, `BUILD_NOTE`). actionlint is clean on all three.
 * **What is built** (`package.yml`): `x86_64-unknown-linux-musl` (ubuntu; static; also the `.deb` and `.rpm`), `aarch64-apple-darwin` and `x86_64-apple-darwin`
   (both on `macos-latest`), `x86_64-pc-windows-msvc` (`.zip`), and an `msi` job (windows-2022, `cargo wix init` + `cargo wix`, **`continue-on-error`**) so a WiX
-  problem cannot stop the release. Each build: `cargo build --release --locked -p hopswitch-cli --target T`, smoke test (`--version`; on Linux also "not a
+  problem cannot stop the release. Each build: `cargo build --release --locked --target T`, smoke test (`--version`; on Linux also "not a
   dynamic executable"), archive with README + LICENSE. Tool versions are pinned (cargo-deb 3.8.0, cargo-generate-rpm 0.21.1, cargo-wix 0.3.9) and installed
   into a cached `~/.cargo-tools`. Both Linux tools read the program from `target/release/hopswitch`, so the workflow copies the musl build there instead of
   relying on how each tool maps `--target` onto asset paths.
@@ -506,7 +515,7 @@ override it) or a bug in these two scripts.
   `api.github.com` was rate-limited from the sandbox, so only public pages and raw files can be read.
 * **Also added:** `LICENSE` (MIT, "Copyright (c) 2026 Hopswitch contributors": the repo declared MIT but had no file; **the user should confirm the
   copyright holder**), `[profile.release]` (strip, lto, codegen-units 1; deliberately no `panic = "abort"` because `hopswitch-http` relies on `catch_unwind`),
-  `repository` in `[workspace.package]`, `[package.metadata.deb]` and `[package.metadata.generate-rpm]` in `crates/cli/Cargo.toml`.
+  `repository` in `[workspace.package]`, `[package.metadata.deb]` and `[package.metadata.generate-rpm]` in `src/cli/Cargo.toml`.
 * **Checked here (Rust 1.99.1, glibc build, not musl):** release binary (937 KB); `.deb` built with the exact workflow command, installed with `dpkg -i`,
   `hopswitch --version` run from `/usr/bin`, removed; `.rpm` built and its contents read with `rpm -qlp`; the archive and checksum steps; the real `run:`
   scripts of `init` and `publish` executed against a fake `gh` and `git` (tag matching / not matching, beta with a new and with an existing release, tag
@@ -530,7 +539,28 @@ override it) or a bug in these two scripts.
 * Checked: `cargo publish --workspace --dry-run` with Rust 1.99.1 packs, rebuilds from the packed copies and verifies all 7 crates (core, http, storage,
   platform-windows, probe, pacserver, cli; `hopswitch` is only the binary name) in dependency order; 545 tests, fmt, clippy still green on 1.75; `Cargo.lock` unchanged.
   All 7 names were free on crates.io on 2026-10-29. **Nothing was uploaded** (needs the user's crates.io token).
-* To publish (by the user): `cargo login` (token from crates.io/settings/tokens, verified email needed), then `cargo publish --workspace` (cargo >= 1.90) from the
-  repo root. A published version cannot be deleted, only yanked. Users then run `cargo install hopswitch-cli` (the program is called `hopswitch`).
-* Deliberately **not** done: `#[non_exhaustive]` on public enums (versions are 0.x, a breaking change is a 0.2.0); publishing from CI (would need a
-  `CARGO_REGISTRY_TOKEN` secret; liburlparser publishes to PyPI on tags, the same idea applies if wanted).
+* **Publishing is done by CI** (user's decision): job `crates` in `release.yml`, only for a tag `v*`, after `package` and `publish` succeeded, runs
+  `cargo publish --workspace --locked` (stable cargo is >= 1.90) with the repository secret **`CARGO_REGISTRY_TOKEN`**; without the secret it fails with a clear
+  message. The `report` job lists it. **The user must add the secret** (GitHub: Settings -> Secrets and variables -> Actions; token from crates.io/settings/tokens,
+  account email verified), bump nothing (0.1.0 is the first version) and push the tag `v0.1.0`. Master pushes only build `__beta__`; they never touch crates.io.
+  A published version cannot be deleted, only yanked. Users then run `cargo install hopswitch-cli` (the program is `hopswitch`).
+* **Not verified:** the real upload (token, crates.io rules), and what `cargo publish --workspace` does when some crates are already published (a re-run of a
+  half-failed publish): if it errors, bump to 0.1.1 instead. No dry-run job was added to CI on purpose: after the first publish, a dry run of the same version
+  would fail on every master push until the version is bumped.
+* Deliberately **not** done: `#[non_exhaustive]` on public enums (versions are 0.x, a breaking change is a 0.2.0).
+
+## 07zn: one package (ADR-0013)
+
+* **Why:** crates.io needs every dependency published; seven crates meant seven names. The user wants only `hopswitch` (and said nobody installs it soon, so it can be published now).
+* **What changed:** every crate became a module (`git mv`, history kept); inside modules `crate::x` became `crate::<module>::x`, other crates `hopswitch_x::` became `crate::x::` (library) or
+  `hopswitch::x::` (tests, examples, `main.rs`); tests were renamed `tests/<module>_<name>.rs` (two names collided: `proxy.rs`, `server.rs`); one root `Cargo.toml` (deps: serde, serde_json,
+  thiserror, base64, getrandom; dev: tempfile pinned `=3.10.1`; `[lints]`; `[profile.release]`; deb/rpm metadata; `include` = src, tests, examples, README, LICENSE, manifests). No external dependency
+  changed version in `Cargo.lock`. Workflows: no `-p`/`--workspace`; `cargo deb` / `cargo generate-rpm` / `cargo wix` run at the root; `pac-bench` paths are `src/core/pac_script.rs`, `src/core/rule_list.rs`,
+  `examples/gen_pac.rs`; the `crates` job runs `cargo publish --locked`.
+* **Checked:** 549 tests (545 + 4 architecture tests), fmt, clippy `-D warnings`, rustdoc `-D warnings` on Rust 1.75 **and** 1.99.1; the architecture tests were checked with seven deliberate violations
+  (core uses storage / std::fs, http uses core, brace-form `use crate::{..}`, cli uses platform_windows, an unlisted new module, `libc` added) plus the alias case; `.deb` and `.rpm` built from the new manifest
+  (same contents as before), the `.deb` installed with dpkg, run and removed; `cargo publish --dry-run --locked` packs 95 files, 133 KiB compressed, and verifies.
+* **Found on the way:** the `cli` module never used `platform_windows` or `probe` (only `main.rs` wires them): the table is stricter than the old Cargo graph. `core` uses `std::net` types and `std::thread` (no file system,
+  process, environment or sockets), so only those are forbidden.
+* **Not verified:** the merged layout has not been seen on GitHub Actions (Windows, macOS, the musl build, `package.yml`, the `.msi` job with `cargo wix init` at the root); the real publish.
+* **Names on crates.io:** only `hopswitch` is needed now. Its availability was not checked after this change (the seven `hopswitch-*` names are no longer used).

@@ -118,12 +118,33 @@ jobs:
           fi
           gh release upload "$RELEASE_NAME" dist/* --repo "$GITHUB_REPOSITORY"
 
+  # crates.io, for a real release only (a tag), after the files are published. Needs the repository secret
+  # CARGO_REGISTRY_TOKEN (Settings -> Secrets and variables -> Actions). `cargo publish` uploads the
+  # one crate, `hopswitch`.
+  crates:
+    name: publish to crates.io
+    needs: [init, package, publish]
+    if: needs.init.outputs.is_tag == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Publish the crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "::error::the repository secret CARGO_REGISTRY_TOKEN is not set"
+            exit 1
+          fi
+          cargo publish --locked
+
   # Written whatever happened, like the report of ci.yml. It goes to the `ci-report` branch as
   # `release.md`, not onto the release, because a failed build never reaches the release.
   report:
     name: release report
     if: always()
-    needs: [init, package, publish]
+    needs: [init, package, publish, crates]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     continue-on-error: true

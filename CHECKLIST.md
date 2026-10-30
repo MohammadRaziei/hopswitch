@@ -49,7 +49,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] `CommandRunner` port + `FakeRunner` in core; `ProcessRunner` (no console window on Windows)
 - [x] Proxy: registry read/write, `WinINet` refresh, foreign states restored value for value, unsupported cases refused
 - [x] 31 adapter tests with the fake runner (run on any OS) + `proxy_smoke` example for real-machine verification
-- [ ] **Manual check on a real Windows machine** (`cargo run -p hopswitch-platform-windows --example proxy_smoke`): read, apply, restore, crash-restore
+- [ ] **Manual check on a real Windows machine** (`cargo run --example proxy_smoke`): read, apply, restore, crash-restore
 - [ ] DNS (needs admin) → implemented together with Step 10 (elevated helper)
 ### ⬜ Step 5 — macOS adapter (`networksetup`, per-service handling)
 ### ⬜ Step 6 — Linux adapter (GNOME `gsettings`, KDE, `resolvectl` / `nmcli`)
@@ -63,7 +63,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [ ] Capabilities / permissions allow-list
 - [ ] Tray icon + quick-switch menu, single-instance, autostart
 
-### ✅ Step 7b — CLI (`crates/cli`)
+### ✅ Step 7b — CLI (`src/cli`)
 - [x] `hopswitch proxy|dns use <name|preset>`, `off`, `list`, `add`, `remove`; `hopswitch off`, `status`, `presets`, `help` — same services and adapters as the app (no logic of its own)
 - [x] Profiles load lazily (`off` works even if `profiles.json` is corrupt); damaged files are reported and never modified
 - [x] 38 tests (parser, settings folder, end-to-end behaviour against an in-memory system + temp dir)
@@ -85,10 +85,10 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] CI: every branch, concurrency, timeouts, `cargo doc` with warnings denied, and a `failure report` job in `ci.yml` and `pac-bench.yml` that writes `ci.md` / `pac-bench.md` to the `ci-report` branch (failed jobs with the log lines that explain them; the WinHTTP tables). Tested on fixtures and real cargo output; not yet seen running on GitHub
 - [x] Code review against the BeautifulRust skill: `AutoMode` replaces the two-`bool` `AutoSettings::new`; `Debug` on every public type with `missing_debug_implementations` enforced; docs on all consts; `FromStr` for `PacConfig`. Open: `#[non_exhaustive]` before publishing
 - [x] Decision: a Rules profile that needs a SOCKS proxy is refused on Windows (fail closed, ADR-0011); enforce it where the plan is built
-- [x] Phase 2, shared HTTP server (`crates/http`, std only, 07za): loopback-only bind (anything else `InvalidInput`), `Host` check, 400/403/431, thread per connection (cap 32, slot returned even when a handler panics, 500 for the panic), header-injection filter, handler cannot set `Content-Length`/`Connection`; 19 socket tests, four deliberate breakages each caught. `pacserver` is now a thin handler on it (its 22 tests unchanged).
+- [x] Phase 2, shared HTTP server (`src/http.rs`, std only, 07za): loopback-only bind (anything else `InvalidInput`), `Host` check, 400/403/431, thread per connection (cap 32, slot returned even when a handler panics, 500 for the panic), header-injection filter, handler cannot set `Content-Length`/`Connection`; 19 socket tests, four deliberate breakages each caught. `pacserver` is now a thin handler on it (its 22 tests unchanged).
 - [x] Phase 2, `hopswitch serve` (ADR-0012 step b, 07ze): 256-bit token in an owner-only file (replaced when damaged, tightened when loose), `Authorization: Bearer` checked before the path, `Origin` check, no CORS, `GET /api/status`, `--ip` loopback only, `--port`, `--no-auto`; 22 tests over real sockets, 7 deliberate breakages caught, real binary probed with curl. Not covered by a test: the in-server auto loop. Windows/macOS CI not yet seen.
 - [ ] Phase 2, MCP server, read-only first (ADR-0012 step c).
-- [x] Phase 2, local PAC server (`crates/pacserver`, std only): loopback + free port, `Host` check against DNS rebinding, thread per connection (cap 32), 431/404/405/400/403, no-store, live `set_script`; 22 socket tests. Not yet: wiring to a Rules profile + SOCKS refusal, the running-process rule, crash cleanup
+- [x] Phase 2, local PAC server (`src/pacserver.rs`, std only): loopback + free port, `Host` check against DNS rebinding, thread per connection (cap 32), 431/404/405/400/403, no-store, live `set_script`; 22 socket tests. Not yet: wiring to a Rules profile + SOCKS refusal, the running-process rule, crash cleanup
 - [x] Crash safety groundwork: `NetworkService::activate_state` (apply a ready-made state with snapshot-first, rollback and original kept), crash/resume test with a PAC applied, `PacConfig::loopback` / `hopswitch_port()` to recognise Hopswitch's own PAC address. CORRECTION: the failure mode of a dead PAC address (outage vs silent direct) is unmeasured; the PAC benchmark now probes it
 - [x] Stale PAC detection and cleanup: `Prober::probe_local_port`, `stale_hopswitch_pac`, CLI `status` / `off` / `proxy off` (restore the saved original; with none, switch a dead own address off; never touch a served or foreign PAC). MEASURED: WinHTTP returns 0x2f87 for a PAC address nothing listens on
 - [x] ADR-0012 (headless mode, web interface, bare command, MCP) written; step (a) done: `--version`/`-V`, `decide_launch` + `main.rs` (bare command opens `hopswitch-gui` when there is a display and it is installed, else help + reason). Next: (b) `serve --ip --port` with token, (c) MCP, (d) Linux adapter (needs the user's answer), (e) `service install`
@@ -116,7 +116,7 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [x] `ConnectivitySettings` (probe URL / DNS domain / timeout / interval): validated, serde re-validates
 - [x] `Autopilot` decision engine in core: auto connect, auto switch, both; failure streak + minimum-gain hysteresis; 21 tests
 - [x] `Prober` port + `FakeProber` + parallel `probe_proxies` / `probe_dns_profiles` in core (5 tests)
-- [x] `crates/probe` (`NetProber`, std only): DNS `A` query over UDP; HTTP through HTTP / SOCKS4a / SOCKS5 proxies; `https://` targets test the tunnel; 22 tests against loopback fake servers
+- [x] `src/probe` (`NetProber`, std only): DNS `A` query over UDP; HTTP through HTTP / SOCKS4a / SOCKS5 proxies; `https://` targets test the tunnel; 22 tests against loopback fake servers
 - [x] CLI: `hopswitch ping [proxy|dns] [--url U] [--domain D] [--timeout MS]` (read-only, marks the active profile)
 - [x] `AutoConfig` (per-kind connect/switch + ordered pool + test settings; **the proxy part became `connect` + `selected` in Step 7d, DNS kept switch + pool**), `AutoConfigStore` port, `JsonFileAutoStore` -> `auto.json` (versioned, atomic, damaged file reported and never touched)
 - [x] `AutoRunner` in core: probe pool -> `Autopilot` -> apply through the normal services; proxy and DNS independent, a failure in one never blocks the other; off kinds send no traffic
@@ -137,6 +137,10 @@ Legend: ✅ done · 🔄 in progress · ⬜ todo. A step is done only when its *
 - [ ] Empty / loading / error states, toasts, keyboard shortcuts
 
 ### ⬜ Step 10 — Privilege helper for DNS changes
+### ✅ Step 7c — One package (ADR-0013, 07zn)
+
+- [x] The seven crates are modules of one package `hopswitch`; layering kept by `tests/architecture.rs` (7 deliberate violations caught); 549 tests, fmt, clippy, rustdoc green on Rust 1.75 and 1.99.1; `.deb`/`.rpm` rebuilt and the `.deb` installed; `cargo publish --dry-run` verifies (95 files, 133 KiB). Not seen on GitHub Actions yet.
+
 ### 🟨 Step 11 — Packaging & CI (GitHub Actions matrix, signed installers, updater)
 
 - [x] Release workflow (07zg), modelled on liburlparser: `release.yml` (push to master -> pre-release `__beta__`, tag `v*` -> real release; files replaced only after every build succeeded; the `__beta__` tag moves), `package.yml` (reusable; also on pull requests that touch packaging), `release_template.md`. Files: `.tar.gz` (Linux x86_64 musl, macOS arm64 and x64), `.zip` (Windows x64), `.deb`, `.rpm`, `.msi`, `SHA256SUMS`. Checked locally: actionlint, release build, `.deb` installed with dpkg and run, `.rpm` contents, archive + checksum steps, the real scripts against a fake `gh`/`git`. **Not run on GitHub yet.**

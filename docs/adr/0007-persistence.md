@@ -1,10 +1,10 @@
 # ADR-0007: Persistence lives in its own crate; core only defines ports
 
-* **Status:** accepted
+* **Status:** accepted; "own crate" is now "own module" (`src/storage`), see ADR-0013
 * **Decisions:**
   1. **`core` stays free of file I/O.** It defines `Profiles` (validated collection: unique ids per
      kind, insertion order) and the `ProfileRepository` / `SessionStore` ports. File code lives in
-     `crates/storage` (`hopswitch-storage`).
+     `src/storage` (it was the crate `hopswitch-storage`).
   2. **Atomic, durable writes.** `write_atomic` = write sibling temp file → `fsync` → rename over the
      target → `fsync` the directory (Unix). A crash leaves the whole old or whole new file. One writer
      per path is assumed (the app will be single-instance).

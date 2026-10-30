@@ -15,7 +15,7 @@
      directory) and preserve permissions and ownership; never replace a symlink with a regular file.
 * **Consequences:** a little more code than overwriting the file; in exchange, the worst case is a
   refused operation with a clear error, never lost user data. The property is covered by tests
-  (`crates/core/tests/managed_block.rs`), including exact round-trip restoration.
+  (`tests/core_managed_block.rs`), including exact round-trip restoration.
 * **Known limit:** glibc uses only the first **3** `nameserver` lines of `resolv.conf`. The Linux
   adapter must warn or truncate when a profile has more than 3 DNS servers (profiles allow up to 4
   because Windows and macOS accept more).

@@ -11,9 +11,9 @@ on:
     paths:
       - 'tools/pac-bench/**'
       - 'tools/ci/**'
-      - 'crates/core/src/pac_script.rs'
-      - 'crates/core/src/rule_list.rs'
-      - 'crates/core/examples/**'
+      - 'src/core/pac_script.rs'
+      - 'src/core/rule_list.rs'
+      - 'examples/gen_pac.rs'
       - '.github/workflows/pac-bench.yml'
 
 concurrency:
@@ -42,7 +42,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Generate the PAC with the Rust generator (the real product output)
-        run: cargo run -p hopswitch-core --example gen_pac -- --iran data/iran.txt --fod data/fod.txt --out build
+        run: cargo run --example gen_pac -- --iran data/iran.txt --fod data/fod.txt --out build
       - name: Check every answer in V8 (Node)
         run: python tools/pac-bench/verify_local.py build --engine node
       - name: Run them through WinHTTP

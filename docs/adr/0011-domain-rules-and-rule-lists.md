@@ -36,7 +36,7 @@ themselves, and the exact size cap in Chromium. Its source defines a maximum PAC
 
 ## Implementation notes (step 07r)
 
-The generator is `PacPlan` in `crates/core/src/pac_script.rs`. Layers answer in this order: the user's rules
+The generator is `PacPlan` in `src/core/pac_script.rs`. Layers answer in this order: the user's rules
 (a linear scan, in order), each list (a bucket table; a single-label entry such as `ir` is stored as `1` for
 the whole TLD), then the default. Plain host names are `DIRECT`; hosts are lower-cased and one trailing dot is
 removed. A script over 1 000 000 bytes is an error (`PacError::TooLarge`), never a truncated script. On the

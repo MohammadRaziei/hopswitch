@@ -10,7 +10,6 @@ on:
       - '.github/workflows/package.yml'
       - 'Cargo.toml'
       - 'Cargo.lock'
-      - 'crates/cli/Cargo.toml'
       - 'LICENSE'
 
 permissions:
@@ -55,7 +54,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Build
-        run: cargo build --release --locked -p hopswitch-cli --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Smoke test
         # The Intel Mac binary is built on an Apple-silicon runner and is not run here.
@@ -102,8 +101,8 @@ jobs:
           # rather than relying on how each tool maps --target onto the asset paths.
           mkdir -p target/release
           cp target/${{ matrix.target }}/release/hopswitch target/release/hopswitch
-          cargo deb -p hopswitch-cli --no-build --no-strip --output dist/
-          cargo generate-rpm -p crates/cli --output dist/
+          cargo deb --no-build --no-strip --output dist/
+          cargo generate-rpm --output dist/
           ls -l dist
 
       - uses: actions/upload-artifact@v4
@@ -134,10 +133,10 @@ jobs:
           version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
           cargo install --locked --root "$HOME/.cargo-tools" cargo-wix@"$CARGO_WIX_VERSION"
           export PATH="$HOME/.cargo-tools/bin:$PATH"
-          cargo build --release --locked -p hopswitch-cli
-          cargo wix init -p hopswitch-cli --force
+          cargo build --release --locked
+          cargo wix init --force
           mkdir -p dist
-          cargo wix -p hopswitch-cli --no-build --nocapture --output "dist/hopswitch-$version-x86_64-pc-windows-msvc.msi"
+          cargo wix --no-build --nocapture --output "dist/hopswitch-$version-x86_64-pc-windows-msvc.msi"
       - uses: actions/upload-artifact@v4
         with:
           name: dist-msi

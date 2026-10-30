@@ -9,9 +9,10 @@ system-tray menu. It does not run or ship any proxy server.
 | Layer            | Choice                                              |
 |------------------|-----------------------------------------------------|
 | Shell            | Tauri 2 (Rust)                                      |
-| Core logic       | `crates/core` — pure Rust, **no Tauri / OS imports** |
-| Persistence      | `crates/storage` — JSON files, atomic writes        |
-| OS adapters      | `crates/platform-*` (added in later steps)          |
+| Core logic       | `src/core` — pure Rust, **no Tauri / OS imports**   |
+| Persistence      | `src/storage` — JSON files, atomic writes           |
+| OS adapters      | `src/platform_*` (one module per OS)                |
+| Packaging        | one package `hopswitch` (ADR-0013); layering is checked by `tests/architecture.rs` |
 | Frontend         | React + TypeScript + Tailwind + Vitest              |
 | Design source    | `design-system/MASTER.md` (generated with ui-ux-pro-max) |
 
@@ -35,7 +36,7 @@ For every unit of behaviour:
 4. Run the full gate (below), tick the item in `CHECKLIST.md`, then commit.
 
 Test names describe behaviour (`rejects_port_zero`), not implementation.
-Prefer tests in `crates/*/tests/` (public API). Frontend tests use Vitest + `mockIPC` from `@tauri-apps/api/mocks`.
+Prefer tests in `tests/<module>_<name>.rs` (public API). Frontend tests use Vitest + `mockIPC` from `@tauri-apps/api/mocks`.
 
 ## Quality gate (must pass before every commit)
 
@@ -57,13 +58,16 @@ One step of `CHECKLIST.md` = one commit (or a small series). After each step, th
 ```
 hopswitch/
 ├── AGENT.md  CHECKLIST.md  README.md
-├── Cargo.toml                 # workspace
-├── crates/
+├── Cargo.toml                 # one package: library + binary `hopswitch` (ADR-0013)
+├── src/
+│   ├── lib.rs  main.rs        # main.rs wires adapters into the CLI
 │   ├── core/                  # domain + services + ports (pure Rust)
 │   ├── storage/               # JSON profile repository, session store
-│   └── platform-*/            # OS adapters            (later)
-├── src-tauri/                 # Tauri shell, commands, tray (later)
-├── src/                       # React frontend              (later)
+│   ├── http.rs  pacserver.rs  probe/  cli/
+│   └── platform_*/            # OS adapters
+├── tests/  examples/          # tests/<module>_<name>.rs
+├── src-tauri/                 # Tauri shell, commands, tray (later; workspace member, publish = false)
+├── ui/                        # React frontend              (later; not src/, which is Rust)
 ├── design-system/             # MASTER.md + page overrides  (later)
 └── docs/
     ├── ARCHITECTURE.md
