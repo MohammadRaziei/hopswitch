@@ -1,15 +1,15 @@
 # CI report
 
-- commit: `71213b88b27bae270a41f97b189311621eb4bbdd` on `master` - chore: prepare project structure and crates for publishing on crates.io
-- event: push, run: https://github.com/MohammadRaziei/hopswitch/actions/runs/41011844014
+- commit: `c7dde812942b807c3d08bb5fdde68cd62e6c79af` on `master` - refactor: align workspace paths and imports in CI scripts
+- event: push, run: https://github.com/MohammadRaziei/hopswitch/actions/runs/41037870227
 - result: **all green** (6 of 6 jobs ok)
-- written: 2026-10-30 06:04:55 UTC
+- written: 2026-10-30 10:04:48 UTC
 
 | job | result |
 | --- | --- |
 | fmt + clippy | success |
 | Windows proxy adapter (real registry) | success |
-| test (windows-latest) | success |
 | test (ubuntu-latest) | success |
 | test (Rust 1.75, the declared minimum) | success |
+| test (windows-latest) | success |
 | test (macos-latest) | success |
